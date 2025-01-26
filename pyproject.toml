@@ -1,0 +1,18 @@
+[project]
+name = "speekaboo"
+version = "0.1.0"
+description = "A drop-in replacement for Speaker.bot using Piper TTS"
+authors = [
+    {name = "easyaspi314",email = "6258309+easyaspi314@users.noreply.github.com"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    'websockets==14.2'
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
