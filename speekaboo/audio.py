@@ -18,8 +18,34 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-import config
-from threading import Lock
+from config import config
+import miniaudio
+from piper import PiperVoice
 
-class Speaker:
+"""
+Handles TTS and audio playback.
+
+Audio playback uses miniaudio
+"""
+
+current_sample_rate: int = -1
+current_device: str = ""
+
+def get_devices() -> dict:
+    """
+    Gets a list of devices in a more friendly format than miniaudio:
+    """
+    devices = miniaudio.Devices()
+    output = {}
+    playbacks = devices.get_playbacks()
+    for d in enumerate(playbacks, 1):
+        if d[1]["name"] in output:
+            print("warning: {} duplicated".format(d[1]["name"]))
+        output[d[1]["name"]] = (d[0], d[1])
+            
+    return output
+
+
+
+def reinit():
     pass

@@ -7,4 +7,4 @@ This was designed because on Linux, while Speaker.bot launches with the correct 
 in Wine), Azure doesn't work, Google Cloud TTS has a weird popping, and basically everything else costs money.
 
 While Speekaboo doesn't have chat integration (as of writing), it supports the same Websockets and UDP API as Speaker.bot, so
-it can be integrated with other programs like Streamer.bot. 
+it can be integrated with other programs like Streamer.bot.
