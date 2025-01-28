@@ -20,28 +20,29 @@
 
 import sys
 import signal
-import tkinter
+import tkinter as tk
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from ttkbootstrap.tooltip import ToolTip
 import queue
 from server import UDPServer, WSServer
 import config
-from piper import PiperVoice 
-from piper.download import get_voices
-
+import voice_manager
+import uuid
+import math
+import audio
+import threading
+import message_queue
 def cmd_stop():
     print("STUB")
-
-enabled = True
-paused = False 
-messages = queue.Queue()
 
 udp_thread = UDPServer()
 udp_thread.start()
 ws_thread = WSServer()
 ws_thread.start()
 
+audio_thread =threading.Thread(target=audio.start_thread)
+audio_thread.start()
 window = ttk.Window()
 window.geometry("600x400")
 window.title("Speekaboo")
@@ -49,14 +50,30 @@ window.title("Speekaboo")
 notebook = ttk.Notebook(window)
 notebook.pack(expand=True, fill="both", padx=5, pady=5)
 
+vm = voice_manager.VoiceManager()
+
 def do_close():
-    window.destroy()
+    config.running = False
+    global window
+    if window is not None:
+        window.destroy()
+        window = None
+    print("Waiting for downloads")
+    vm.wait_for_downloads()
+    print("Waiting for audio thread")
+    audio_thread.join()
     ws_thread.stop()
     udp_thread.stop()
     config.save_config()
     sys.exit(0)
 
 class MainTab(ttk.Frame):
+    def manual_send(self, event=None):
+        msg = self.manual_text.get()
+        self.manual_text.delete(0, tk.END)
+
+        message_queue.add(msg)
+
     """
     Main tab
     
@@ -80,7 +97,8 @@ class MainTab(ttk.Frame):
 
         self.manual_text = ttk.Entry(self, text="hello")
         self.manual_text.grid(row=row, column=0, columnspan=4, sticky="nesw", padx=5, pady=5)
-        self.play_button = ttk.Button(self, text="Speak")
+        self.manual_text.bind("<Return>", self.manual_send)
+        self.play_button = ttk.Button(self, text="Speak", command=self.manual_send)
         self.play_button.grid(row=row, column=4, sticky="nesw", padx=5, pady=5)
         row += 1
 
@@ -108,33 +126,109 @@ class MainTab(ttk.Frame):
 main_tab = MainTab(notebook)
 notebook.add(main_tab, text="Main")
 
-voicedata = None
-
-def load_voices():
-    global voicedata
-
-
-
-# class CreateVoiceDialog(ttk.Toplevel):
-#     def __init__(self, *args, **kwargs):
-#         ttk.Frame.__init__(self, *args, **kwargs)
-#         if voicedata is None and config.data_folder is not None:
-#             voicedata = get_voices(config.data_folder, False)
-            
-
-#         pass
-
-class VoicesTab(ttk.Frame):
-
-    """
-    Voices tab
-
-    Contains:
-       - List of installed voice aliases
-       - Default voice selection
-       - Button to create or edit a voice alias
-    """
+class VoiceAliasesTab(ttk.Frame):
     pass
+
+class DownloadVoicesTab(ttk.Frame):
+    
+    def set_installed(self, voice: str, installed: bool):
+        """
+        This may be called after the window is destroyed.
+        """
+        global window
+        if window is None:
+            return
+    
+        item = self.voices_list.item(voice)
+        print(item)
+        if isinstance(item["values"], list):
+            item["values"][1] = "Yes" if installed else "No"
+            self.voices_list.item(voice, values=item["values"])
+
+    def handle_installbutton(self):
+        selection = self.voices_list.selection()[0]
+
+        item = self.voices_list.item(selection)
+        if isinstance(item["values"], list):
+            print(item)
+            if vm.is_voice_installed(selection):
+                vm.uninstall_voice(selection)
+                item["values"][1] = "No"
+            else:
+                item["values"][1] = "..."
+                # self.voices_list.item(selection, values=item["values"])
+                vm.install_voice(selection, self.set_installed)
+                # item["values"][1] = "Yes" if is_installed else "No"
+            self.voices_list.item(selection, values=item["values"])
+        
+        
+        
+
+    """
+    Download Voices tab
+
+    Shows a Treeview with all the available voices to download
+    """
+    def __init__(self, parent, *args, **kwargs):
+        ttk.Frame.__init__(self, parent, *args, **kwargs)
+        self.voices_list = ttk.Treeview(self, selectmode="browse", columns=("C1", "C2", "C3", "C4"))
+        self.voices_list.column("#0", stretch=tk.YES)
+        self.voices_list.column("C1", width=70, stretch=tk.NO)
+        self.voices_list.column("C2", width=70, stretch=tk.NO)
+        self.voices_list.column("C3", width=70, stretch=tk.NO)
+        self.voices_list.column("C4", width=80, stretch=tk.NO)
+        self.voices_list.heading("#0", text="Name", anchor=tk.W)
+        self.voices_list.heading("C1", text="Quality", anchor=tk.W)
+        self.voices_list.heading("C2", text="Installed", anchor=tk.W)
+        self.voices_list.heading("C3", text="Size", anchor=tk.W)
+        self.voices_list.heading("C4", text="Speakers", anchor=tk.W)
+
+        self.voices_list.grid(row=0, column=0, columnspan=5, padx=5, pady=5, sticky=tk.NSEW)
+        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command = self.voices_list.yview)
+        self.scrollbar.grid(row=0, column=6, sticky=tk.NS)
+        self.voices_list.configure(yscrollcommand=self.scrollbar.set)
+        self.parse_voices(vm.get_voices())
+        self.installbutton=ttk.Button(self, text="Install/uninstall selected voice", command=self.handle_installbutton)
+        self.installbutton.grid(row=1,column=0, columnspan=6)
+        self.pack(expand=False, fill="both")
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+
+    # https://stackoverflow.com/a/14822210
+    @staticmethod
+    def convert_size(size_bytes):
+        if size_bytes == 0:
+            return "0B"
+        size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
+        i = int(math.floor(math.log(size_bytes, 1024)))
+        p = math.pow(1024, i)
+        s = round(size_bytes / p, 1)
+        return "%s %s" % (s, size_name[i])
+    
+    def parse_voices(self, voices: dict):
+        # First pass: gather all the available languages
+        categorized: dict[list] = dict()
+        language_ids = set()
+        for voice in voices:
+            code = voices[voice]["language"]["code"]
+            if not code in language_ids:
+                categorized[code] = dict()
+
+                # example: English (United States)
+                friendly_name = "{} ({})".format(voices[voice]["language"]["name_english"], voices[voice]["language"]["country_english"])
+                self.voices_list.insert("", "end", iid="/" + code, text=friendly_name)
+                language_ids.add(code)
+            is_installed = "Yes" if vm.is_voice_installed(voice) else "No"
+            friendly_size = self.convert_size(vm.get_voice_size(voice))
+            self.voices_list.insert("/" + code, "end", text=voices[voice]["name"], iid=voices[voice]["key"], 
+                                    values=(
+                                        voices[voice]["quality"],
+                                        is_installed,
+                                        friendly_size,
+                                        voices[voice]["num_speakers"]))
+
+download_voices_tab = DownloadVoicesTab(notebook)
+notebook.add(download_voices_tab, text="Download Voices")
 
 
 

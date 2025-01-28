@@ -18,13 +18,16 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from config import config, GLOBAL_UUID, messages
+import config
 import socketserver
 import websockets.sync.server as websockets
 from threading import Thread
 # from gui import messages
 import uuid
 import json
+import message_queue
+
+
 
 def cmd_speak(json_data: dict = {}):
     """
@@ -46,8 +49,7 @@ def cmd_speak(json_data: dict = {}):
         "message": "<message>"
     }
     """
-    if enabled and len(json_data["message"].split()) < 25:
-        messages.put(json_data["message"])
+    message_queue.add(json_data["message"])
     return {}
 
 def cmd_stop(json_data: dict = {}):
@@ -66,8 +68,7 @@ def cmd_stop(json_data: dict = {}):
         "command": "stop"
     } 
     """
-    global stop
-    stop = True
+    #  = True
     return {}
 
 def cmd_enable(json_data: dict = {}):
@@ -86,8 +87,7 @@ def cmd_enable(json_data: dict = {}):
         "command": "disable" (or "off")
     }    
     """
-    global enabled
-    enabled = True
+    config.enabled = True
     return {}
 
 def cmd_disable(json_data: dict = {}):
@@ -106,8 +106,7 @@ def cmd_disable(json_data: dict = {}):
         "command": "disable" (or "off")
     }    
     """
-    global enabled
-    enabled = False
+    config.enabled = False
     return {}
 
 
@@ -127,8 +126,7 @@ def cmd_pause(json_data: dict = {}):
         "command": "pause"
     }
     """
-    global paused
-    paused = True
+    config.paused = True
     return {}
 
 def cmd_resume(json_data: dict = {}):
@@ -147,8 +145,7 @@ def cmd_resume(json_data: dict = {}):
         "command": "resume"
     }
     """
-    global paused
-    paused = False
+    config.paused = False
     return {}
 
 def cmd_clear(json_data: dict = {}):
@@ -167,8 +164,7 @@ def cmd_clear(json_data: dict = {}):
         "command": "clear"
     }
     """
-    with messages.mutex:
-        messages.queue.clear()
+    message_queue.clear()
     return {}
 
 
@@ -178,7 +174,7 @@ def cmd_getinfo(json_data: dict = {}):
     Just echo back what Speaker.bot 0.1.4 returns.
     """
     return {
-        "instanceId": GLOBAL_UUID,
+        "instanceId": config.GLOBAL_UUID,
         "name": "Speaker.bot",
         "version": "0.1.4",
         "os": "windows",
@@ -263,12 +259,11 @@ def parse_speaker_bot_websocket(message: str) -> dict:
         return {}
 
 def parse_speaker_bot_udp(message: str):
-    try:
+#    try:
         json_data: dict = json.loads(message)
         request = json_data.get("command", "")
         commands_udp.get(request, cmd_stub)(json_data)
-    except json.JSONDecodeError:
-        print("Failed to parse UDP packet.")
+
 
 class WSServer(Thread):
     """
@@ -281,14 +276,14 @@ class WSServer(Thread):
             websocket.send(parse_speaker_bot_websocket(message))
 
 
-    def __init__(self, ws_addr: str = config["ws_server_addr"], ws_port: int = config["ws_server_port"]):
+    def __init__(self, ws_addr: str = config.config["ws_server_addr"], ws_port: int = config.config["ws_server_port"]):
         super().__init__()
         self.addr = ws_addr
         self.port = ws_port
         self.server = None
 
     def run(self):
-        if config["ws_server_enabled"]:
+        if config.config["ws_server_enabled"]:
             try:
                 with websockets.serve(WSServer.handle_websocket, self.addr, self.port) as self.server:
                     print("Running Websocket server at {}:{}".format(self.addr, self.port))
@@ -318,15 +313,16 @@ class UDPServer(Thread):
         def handle(self):
             self.data = self.request[0].strip()
             print("Received UDP data: {}".format(self.data))
+            parse_speaker_bot_udp(self.data.decode("utf-8"))
 
-    def __init__(self, udp_addr: str = config["udp_server_addr"], udp_port: str = config["udp_server_port"]):
+    def __init__(self, udp_addr: str = config.config["udp_server_addr"], udp_port: str = config.config["udp_server_port"]):
         super().__init__()
         self.addr = udp_addr
         self.port = udp_port
         self.server = None
 
     def run(self):
-        if config["udp_server_enabled"]:
+        if config.config["udp_server_enabled"]:
             try:
                 with socketserver.UDPServer((self.addr, self.port), UDPServer.UDPHandler) as self.server:
                     print("Running UDP server at {}:{}".format(self.addr, self.port))

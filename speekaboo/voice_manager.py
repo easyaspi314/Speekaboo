@@ -30,6 +30,7 @@ import config
 import time
 from pathlib import Path
 from piper import download as PiperDownloader
+import threading
 
 class VoiceManager:
     def __init__(self):
@@ -45,10 +46,39 @@ class VoiceManager:
             self.voices = PiperDownloader.get_voices(config.data_folder, False)
             print("Couldn't parse downloads!")
         self.language = config.config["voice_language"]
+        self.threads = dict()
+
+    # wait for cleanup
+    def wait_for_downloads(self):
+        notified = False
+        for thread in self.threads:
+            if self.threads[thread].is_alive():
+                if not notified:
+                    notified = True
+                    print("Waiting for downloads to complete...")
+                self.threads[thread].join()
+        self.threads = dict()
+
+    def __del__(self):
+        self.wait_for_downloads()
 
     def get_voices(self):
         return self.voices
-    
+
+    def is_voice_installed(self, voice: str) -> bool:
+        try:
+            PiperDownloader.find_voice(voice, [config.data_folder])
+            return True
+        except:
+            return False
+
+    def get_voice_size(self, voice: str) -> int:
+        size = 0
+        for i in self.voices[voice]["files"]:
+            size += self.voices[voice]["files"][i]["size_bytes"]
+
+        return size
+
     def print_all_voices(self):
         for voice in self.voices:
             print(voice)
@@ -63,25 +93,39 @@ class VoiceManager:
                     pass
                 print(voice)
 
-    def install_voice(self, voice: str):
+    def download_thread(self, voice: str, callback = None):
+        result = False
         try:
             PiperDownloader.ensure_voice_exists(voice, [config.data_folder], config.data_folder, self.voices)
-            return True
+            result = True
         except:
-            return False
+            result = False
+        print("Done downloading {} with result {}".format(voice, result))
+        if callback is not None:
+            callback(voice, result)
+
+    def install_voice(self, voice: str, callback=None) -> bool:
+        """
+        Installs a voice on a separate thread, calling callback when complete.
+        """
+        if self.is_voice_installed(voice):
+            if callback is not None:
+                callback(voice, True)
+    
+        if voice in self.threads and self.threads[voice].is_alive():
+            # be patient!!
+            return
+
+        voice = voice
+        callback = callback
+
+        self.threads[voice] = threading.Thread(target=self.download_thread, args=[voice, callback])
+        self.threads[voice].start()
 
     def uninstall_voice(self, voice: str):
-        onnx = Path(config.data_folder) / (voice + ".onnx")
-        if onnx.exists():
-            try:
-                print("Removing {}".format(onnx))
-                onnx.unlink()
-            except:
-                pass
-        onnx = Path(str(onnx) + ".json")
-        if onnx.exists():
-            try:
-                print("Removing {}".format(onnx))
-                onnx.unlink()
-            except:
-                pass
+        try:
+            onnx_path, config_path = PiperDownloader.find_voice(voice, [config.data_folder])
+            Path(onnx_path).unlink()
+            Path(config_path).unlink()
+        except:
+            pass

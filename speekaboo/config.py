@@ -28,7 +28,9 @@ import queue
 # significance whatsoever :)
 GLOBAL_UUID = "3243f6a8-885a-308d-3131-98a2e0370734"
 messages = queue.Queue() # placeholder
-
+running = True
+paused = False
+enabled = True
 dirinfo = AppDirs("Speekaboo")
 
 def try_create_folder(pathname: str|Path) -> Path|None:
@@ -76,6 +78,7 @@ config = {
             "uuid": ""                                   # UUID placeholder
         }
     },
+    "additional_voices": [],                          # Array of paths to additional voices
     "use_cuda": False,                                # Whether to use Cuda
     "output_device": None,                            # Audio output device (null = default)
     "volume": 1.0,                                    # Output volume

@@ -41,7 +41,11 @@ class MessageInfo:
 _lock: Lock = Lock()
 _queue: deque[MessageInfo] = deque()
 
-def add(message: str, voice: str = config["default_voice"], timestamp: datetime.datetime = datetime.datetime(), censor: bool = False):
+def add(message: str, voice: str = config["default_voice"], timestamp: datetime.datetime = datetime.time(), censor: bool = False):
+    
+    message = message.strip()
+    if len(message) == 0:
+        return
     with _lock:
         _queue.append(MessageInfo(
             message = message,
