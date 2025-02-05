@@ -14,35 +14,35 @@ it can be integrated with other programs like Streamer.bot.
 Speekaboo is far from complete. For basic functionality, it works good enough to use for a basic TTS bot.
 For an EN-US voice, I recommend Amy Medium.
 
--[ ] Not spaghetti codebase
--[ ] Setup wizard (you need to manually add voices)
--[ ] Functional UI (half the things don't work lol)
--[ ] Compatibility of the Speaker.bot WS/UDP API
-   -[x] Basic speaking functionality
-   -[x] Speak requests
-   -[x] Speaking subscriptions (needed for Streamer.bot)
-   -[x] Other subscriptions
-   -[x] Compatibility with Streamer.bot
-   -[ ] Document all functions and events
-   -[ ] 100% API compatibility (some things are stubbed)
-   -[ ] Proper error checking
--[ ] Playing voices
-   -[x] Basic TTS
-   -[x] Voice customization
-   -[ ] Multiple/random voices (each voice alias is one voice only)
-   -[ ] Speaker IDs (untested)
-   -[ ] Pitch shift
-   -[ ] Volume
-   -[ ] Arabic support. piper-phonemize-cross does not include Tashkeel.
--[x] Downloading/uninstalling new voices
--[x] Adding custom .onnx voices
--[x] Manually playing text
--[ ] Profanity filter
--[ ] Interface to cancel or review messages
--[ ] Random voices/multiple voice aliases (todo, needs proper memory overhead management)
--[ ] In-GUI configuration
-   -[x] Creating aliases
--[ ] Chat integration (NOT PLANNED, Streamer.bot can send commands)
+- [ ] Not spaghetti codebase
+- [ ] Setup wizard (you need to manually add voices)
+- [ ] Functional UI (half the things don't work lol)
+- [ ] Compatibility of the Speaker.bot WS/UDP API
+  - [x] Basic speaking functionality
+  - [x] Speak requests
+  - [x] Speaking subscriptions (needed for Streamer.bot)
+  - [x] Other subscriptions
+  - [x] Compatibility with Streamer.bot
+  - [ ] Document all functions and events
+  - [ ] 100% API compatibility (some things are stubbed)
+  - [ ] Proper error checking
+- [ ] Playing voices
+  - [x] Basic TTS
+  - [x] Voice customization
+  - [ ] Multiple/random voices (each voice alias is one voice only)
+  - [ ] Speaker IDs (untested)
+  - [ ] Pitch shift
+  - [ ] Volume
+  - [ ] Arabic support. piper-phonemize-cross does not include Tashkeel.
+- [x] Downloading/uninstalling new voices
+- [x] Adding custom .onnx voices
+- [x] Manually playing text
+- [ ] Profanity filter
+- [ ] Interface to cancel or review messages
+- [ ] Random voices/multiple voice aliases (todo, needs proper memory overhead management)
+- [ ] In-GUI configuration
+  - [x] Creating aliases
+- [ ] Chat integration (NOT PLANNED, Streamer.bot can send commands)
 
 ## Installation
 
