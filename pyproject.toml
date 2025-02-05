@@ -14,10 +14,13 @@ dependencies = [
     'piper_phonemize_cross>=1.2.1',
     'onnxruntime>=1.19.0',
     'appdirs>=1.4.4',
-    'ttkbootstrap>=1.10.1',
-    'hurry.filesize'
+    'ttkbootstrap==1.10.1',
+    'psutil',
+    'cachetools'
 ]
 
+[project.scripts]
+speekaboo = "speekaboo.__main__:main"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

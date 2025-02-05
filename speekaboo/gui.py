@@ -17,32 +17,34 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
-
+import config
+import logging
 import sys
+stdout_handler = logging.StreamHandler(sys.stdout)
+handlers = [stdout_handler]
+if config.config_folder:
+    handlers.append(logging.FileHandler(config.config_folder / "Speekaboo.log"))
+                 
+
+logging.basicConfig(level=logging.INFO, handlers=handlers)
+
 import signal
 import tkinter as tk
+import tkinter.filedialog
+
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from ttkbootstrap.tooltip import ToolTip
-import queue
-from server import UDPServer, WSServer
-import config
-import voice_manager
-import uuid
+from ttkbootstrap.dialogs import Messagebox, Querybox
+
+from server import ws_thread, udp_thread
+from voice_manager import vm
 import math
 import audio
-import threading
-import message_queue
-def cmd_stop():
-    print("STUB")
+import tts
 
-udp_thread = UDPServer()
-udp_thread.start()
-ws_thread = WSServer()
-ws_thread.start()
+audio.audio.start()
 
-audio_thread =threading.Thread(target=audio.start_thread)
-audio_thread.start()
 window = ttk.Window()
 window.geometry("600x400")
 window.title("Speekaboo")
@@ -50,29 +52,41 @@ window.title("Speekaboo")
 notebook = ttk.Notebook(window)
 notebook.pack(expand=True, fill="both", padx=5, pady=5)
 
-vm = voice_manager.VoiceManager()
+# DEBUG: always uses this
+# vm.install_voice("en_US-amy-medium")
 
 def do_close():
+    if not config.running:
+        return
     config.running = False
     global window
+    print("Waiting for downloads")
+    vm.wait_for_downloads()
+    audio.audio.stop()
+    ws_thread.stop()
+    udp_thread.stop()
+    tts.tts_thread.stop()
+    config.save_config()
+
     if window is not None:
         window.destroy()
         window = None
-    print("Waiting for downloads")
-    vm.wait_for_downloads()
-    print("Waiting for audio thread")
-    audio_thread.join()
-    ws_thread.stop()
-    udp_thread.stop()
-    config.save_config()
     sys.exit(0)
 
 class MainTab(ttk.Frame):
     def manual_send(self, event=None):
+        if len(config.config["voices"]) == 0:
+            Messagebox.show_error("Before you can use the TTS, download a voice in the Voices tab and then create a Voice Alias!")
+            return
         msg = self.manual_text.get()
+        voice = self.alias_select.get()
+        if len(voice) == 0:
+            Messagebox.show_error(parent=self, message="Please select a voice")
+            return
         self.manual_text.delete(0, tk.END)
 
-        message_queue.add(msg)
+        tts.add(msg, voice)
+
 
     """
     Main tab
@@ -94,15 +108,17 @@ class MainTab(ttk.Frame):
         self.log_box.insert("", 2, text="Test 3")
         self.grid_rowconfigure(row, weight=1)
         row += 1
+        self.alias_select = ttk.Combobox(self, values=list(config.config["voices"].keys()), width=1, state=ttk.READONLY)
+        self.alias_select.grid(row=row, column=0, sticky=ttk.NSEW, padx=5, pady=5)
 
         self.manual_text = ttk.Entry(self, text="hello")
-        self.manual_text.grid(row=row, column=0, columnspan=4, sticky="nesw", padx=5, pady=5)
+        self.manual_text.grid(row=row, column=1, columnspan=3, sticky="nesw", padx=5, pady=5)
         self.manual_text.bind("<Return>", self.manual_send)
         self.play_button = ttk.Button(self, text="Speak", command=self.manual_send)
         self.play_button.grid(row=row, column=4, sticky="nesw", padx=5, pady=5)
         row += 1
 
-        self.stop_button = ttk.Button(self, text="Stop", bootstyle="secondary")
+        self.stop_button = ttk.Button(self, text="Stop", bootstyle="secondary", command=audio.audio.stop_playback)
         self.stop_button.grid(row=row, column=0, sticky="nesw", padx=5, pady=5)
         ToolTip(self.stop_button, text="Stop the currently playing message")
         self.pause_button = ttk.Button(self, text="Pause", bootstyle="secondary")
@@ -111,7 +127,7 @@ class MainTab(ttk.Frame):
         self.disable_button = ttk.Button(self, text="Disable", bootstyle="secondary")
         self.disable_button.grid(row=row, column=2, sticky="nesw", padx=5, pady=5)
         ToolTip(self.disable_button, text="Enable/Disable queueing and playback")
-        self.quit_button = ttk.Button(self, text="Clear", bootstyle="secondary", command=do_close)
+        self.quit_button = ttk.Button(self, text="Clear", bootstyle="secondary", command=tts.clear)
         self.quit_button.grid(row=row, column=3, sticky="nesw", padx=5, pady=5)
         ToolTip(self.quit_button, text="Clears the queue")
         self.quit_button = ttk.Button(self, text="Quit", bootstyle="secondary", command=do_close)
@@ -127,7 +143,166 @@ main_tab = MainTab(notebook)
 notebook.add(main_tab, text="Main")
 
 class VoiceAliasesTab(ttk.Frame):
-    pass
+    """
+    Tab to manage voice aliases and custom voices
+     _Aliases______________________________________
+    |>voice 1<| Name: ____________________________ |
+    | voice 2 | Voice: <name> <quality> <speaker>  |
+    | voice 3 | Variation: ____                    |
+    |         | Speed: ___         etc             |
+    |         | Volume:                            |
+    |---------'------------------------------------|
+ 
+    """
+    class VoiceConfigFrame(ttk.Frame):
+
+        def load_voice(self, voice: str):
+            self.grid(row=0, column=1, sticky=tk.NSEW)
+            self.name_var.set(voice)
+            self.voice_var.set(config.config["voices"][voice].get("model_name", ''))
+            self.voice_name.set(self.voice_var.get())
+            self.variation_var.set(config.config["voices"][voice].get("noise_scale", 0.667))
+            self.speech_speed.set(config.config["voices"][voice].get("length_scale", 1.0))
+            self.volume_var.set(config.config["voices"][voice].get("volume", 1.0))
+            self.speaker_id.set(config.config["voices"][voice].get("speaker_id", 0))
+        def save_changes(self):
+
+            voice = self.name_var.get()
+            vm.update_alias(
+                name= voice,
+                voice = self.voices[self.voice_name.current()],
+                speaker = int(self.speaker_id.get() or 0),
+                length_scale=float(self.speech_speed.get() or 1.0),
+                noise_scale=float(self.variation_input.get() or 0.667)
+            )
+        def voice_id_callback(self, var, index, mode):
+            voice = self.voice_var.get()
+            if len(voice) == 0:
+                return
+            
+            print("setting {} to {}".format(self.name_var.get(), voice))
+
+            self.voice_config = vm.get_voice_config(voice) or {"num_speakers": 1}
+            num_speaker = self.voice_config["num_speakers"]
+            if self.speaker_id_var.get() > num_speaker - 1:
+                self.speaker_id_var.set(0)
+
+            vm.update_alias(self.name_var.get(), voice=voice)
+            self.speaker_id.configure(to=num_speaker-1)
+            self.voice_name.set(voice)
+
+        # def speaker_id_callback(self, var, index, mode):
+        #     vm.update_alias(self.name_var.get(), speaker=self.speaker_id_var.get())
+
+        # def variation_callback(self, var, index, mode):
+        #     vm.update_alias(self.name_var.get(), noise_scale=self.speaker_id_var.get())
+
+        # def speed_callback(self, var, index, mode):
+        #     vm.update_alias(self.name_var.get(), length_scale=self.speaker_id_var.get())
+
+        def update_voices(self):
+            self.voices=[]
+            tmp = vm.get_all_installed_voices()
+            for i, j in tmp:
+                self.voices.append(i)
+            self.voices.sort()
+            
+        def __init__(self, parent, *args, **kwargs):
+            ttk.Frame.__init__(self, parent, *args, **kwargs)
+            self.voice_config= dict()
+            self.name_var = tk.StringVar()
+            self.voice_var = tk.StringVar()
+            self.voice_var.trace_add('write', self.voice_id_callback)
+
+            # self.quality_var = tk.StringVar()
+            self.speaker_id_var = tk.IntVar()
+            #self.speaker_id_var.trace_add('write', self.speaker_id_callback)
+
+            self.variation_var = tk.DoubleVar()
+            #self.variation_var.trace_add('write', self.variation_callback)
+                        
+            self.speed_var = tk.DoubleVar()
+            self.volume_var = tk.DoubleVar()
+            self.pitch_var = tk.DoubleVar()
+            self.voices = []
+
+            self.update_voices()
+            row = 0
+            ttk.Label(self, text="Name").grid(row=row, column=0, padx=5, pady=5)
+            self.name_entry = ttk.Label(self, textvariable=self.name_var)
+            self.name_entry.grid(row=row, column=1, sticky=tk.NSEW, padx=5, pady=5)
+            row += 1
+            ttk.Label(self, text="Voice").grid(row=row, column=0, padx=5, pady=5)
+            self.voice_name = ttk.Combobox(self, textvariable=self.voice_var, values=(self.voices), state=ttk.READONLY)
+            
+            self.voice_name.grid(row=row, column=1, padx=5, pady=5)
+            row += 1
+            ttk.Label(self, text="Speaker ID").grid(row=row, column=0, padx=5, pady=5)
+            self.speaker_id = ttk.Spinbox(self, from_=0, to=0, increment=1, textvariable=self.speaker_id_var)
+            self.speaker_id.grid(row=row, column=1, sticky=tk.NSEW, padx=5, pady=5) 
+            row += 1
+            ttk.Label(self, text="Variance").grid(row = row, column=0, padx=5, pady=5)
+            self.variation_input = ttk.Spinbox(self, from_=0.0, to=2.0, increment=0.1, textvariable=self.variation_var)
+            self.variation_input.grid(row=row, column=1, sticky=tk.NSEW, padx=5, pady=5)
+            self.variation_input.bind("")
+            row += 1
+
+            ttk.Label(self, text="Speech speed").grid(row=row, column=0, padx=5, pady=5)
+            self.speech_speed = ttk.Spinbox(self, from_=0.001, to=2.0, increment=0.1, textvariable=self.speed_var)
+            self.speech_speed.grid(row=row, column=1, sticky=tk.NSEW, padx=5, pady=5)
+            row += 1
+            ttk.Label(self, text="Volume").grid(row=row, column=0, padx=5, pady=5)
+            self.volume = ttk.Scale(self, from_=0.0, to=1.0, variable=self.volume_var)
+            self.volume.grid(row=row, column=1, sticky=ttk.NSEW, padx=5, pady=5)
+            row += 1
+            self.save_button = ttk.Button(self, text="Save changes", command=self.save_changes)
+            self.save_button.grid(row=row, column=0, columnspan=2, sticky=ttk.NSEW)
+
+
+
+    def add_alias_callback(self):
+
+        newname = Querybox.get_string(
+            prompt="Enter the name of the alias",
+            title="New voice alias",
+            parent=self
+        )
+
+        if newname in config.config["voices"]:
+            Messagebox.show_error(parent=self, message="Voice already exists.", title="Error")
+            return
+        
+        vm.update_alias(newname)
+        self.aliases.insert("", "end", iid=newname, text=newname)
+        self.aliases.selection_set([newname])
+        # self.frame.load_voice(newname)
+
+    def select_voice_callback(self, event):
+        for selection in self.aliases.selection():
+
+            self.frame.load_voice(selection)
+            break
+    def __init__(self, parent, *args, **kwargs):
+        ttk.Frame.__init__(self, parent, *args, **kwargs)
+        self.aliases = ttk.Treeview(self, selectmode="browse")
+        self.aliases.heading("#0", text="Aliases")
+
+
+        for voice in config.config["voices"]:
+            self.aliases.insert("", 'end', text=voice, iid=voice)
+        
+        self.aliases.grid(row=0, column=0, sticky=tk.NSEW)
+        self.aliases.bind("<<TreeviewSelect>>", self.select_voice_callback)
+
+        self.frame = VoiceAliasesTab.VoiceConfigFrame(self)
+
+        self.add_button = ttk.Button(self, text="Add new alias", command=self.add_alias_callback)
+        self.add_button.grid(row=1, column=0, sticky=ttk.NSEW)
+
+        self.pack(expand=False, fill=tk.BOTH)
+        
+
+notebook.add(VoiceAliasesTab(notebook), text="Voice Aliases")
 
 class DownloadVoicesTab(ttk.Frame):
     
@@ -140,7 +315,6 @@ class DownloadVoicesTab(ttk.Frame):
             return
     
         item = self.voices_list.item(voice)
-        print(item)
         if isinstance(item["values"], list):
             item["values"][1] = "Yes" if installed else "No"
             self.voices_list.item(voice, values=item["values"])
@@ -152,17 +326,44 @@ class DownloadVoicesTab(ttk.Frame):
         if isinstance(item["values"], list):
             print(item)
             if vm.is_voice_installed(selection):
+                used_aliases = []
+                for voice in config.config["voices"]:
+                    if config.config["voices"][voice].get("model_name", "") == voice:
+                        used_aliases.append(voice)
+
+                if len(used_aliases) != 0:
+                    if len(used_aliases) == 1:
+                        message = "alias"
+                    else:
+                        message = "aliases"
+                    
+                    Messagebox.show_error(message="This voice model is used by the following {}: {}".format(message, used_aliases.join(", ")))
+                    return
+
                 vm.uninstall_voice(selection)
                 item["values"][1] = "No"
             else:
-                item["values"][1] = "..."
+                item["values"][1] = "Downloading"
                 # self.voices_list.item(selection, values=item["values"])
                 vm.install_voice(selection, self.set_installed)
                 # item["values"][1] = "Yes" if is_installed else "No"
             self.voices_list.item(selection, values=item["values"])
+
+    def handle_addmanualbutton(self):
         
-        
-        
+        paths = tkinter.filedialog.askopenfilename(parent=self, filetypes=[("ONNX voice model", "*.onnx")])
+        print(paths)
+        if len(paths) == 0:
+            return 
+        path = paths
+
+        try:
+            vm.register_voice(path)
+            print("Registered voice {}".format(path))
+        except Exception as e:
+            import logging
+            Messagebox.show_error(message="Could not open voice model. Make sure that the onnx.json file is in the same directory.")
+            logging.error("Failed to find file", exc_info = e)
 
     """
     Download Voices tab
@@ -189,7 +390,9 @@ class DownloadVoicesTab(ttk.Frame):
         self.voices_list.configure(yscrollcommand=self.scrollbar.set)
         self.parse_voices(vm.get_voices())
         self.installbutton=ttk.Button(self, text="Install/uninstall selected voice", command=self.handle_installbutton)
-        self.installbutton.grid(row=1,column=0, columnspan=6)
+        self.installbutton.grid(row=1,column=0, columnspan=3)
+        self.addmanualbutton= ttk.Button(self, text="Add voice from file", command = self.handle_addmanualbutton)
+        self.addmanualbutton.grid(row=1,column=3, columnspan=3)
         self.pack(expand=False, fill="both")
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -230,8 +433,6 @@ class DownloadVoicesTab(ttk.Frame):
 download_voices_tab = DownloadVoicesTab(notebook)
 notebook.add(download_voices_tab, text="Download Voices")
 
-
-
 class SettingsTab(ttk.Frame):
     """
     Contains various settings for server ports, audio devices, etc. 
@@ -252,72 +453,9 @@ notebook.add(settings_tab, text="Settings")
 
 
 def poll():
-    window.after(500, poll)
+    if config.running:
+        window.after(500, poll)
 
-"""
-
-sublabel = ttk.Label(window, text="Listening on ws://localhost:7580 and udp://localhost:6990 for Speaker.bot commands. Look for PipeWire ALSA [python3.x] in App name.")
-sublabel.grid(row=0, column=0, sticky="ew")
-
-textbox = ttk.Entry(window)
-textbox.grid(row=1, column=0, sticky="ew")
-
-window.grid_columnconfigure(0, weight=1)
-
-def manual_text():
-    msg = textbox.get()
-    textbox.delete(0, tkinter.END)
-    if enabled:
-        messages.put(msg)
-
-def textbox_enter(event):
-    manual_text()
-
-textbox.bind("<Return>", textbox_enter)
-
-enabledisabletext = tkinter.StringVar(value="Disable")
-pauseresumetext = tkinter.StringVar(value="Pause")
-
-def toggle_enabled():
-    if enabled:
-        enabledisabletext.set("Enable")
-    else:
-        enabledisabletext.set("Disable")
-    enabled = not enabled 
-
-def toggle_pause():
-    if paused:
-        pauseresumetext.set("Pause")
-    else:
-        pauseresumetext.set("Resume")
-    paused = not paused
-
-buttonrow = ttk.Frame(master=window)
-buttonrow.grid(row=2, column=0)
-playbutton = ttk.Button(master=buttonrow, text="Play", command=manual_text)
-stopbutton = ttk.Button(master=buttonrow, text="Stop", command=cmd_stop)
-enabledisablebutton = ttk.Button(master=buttonrow, textvariable=enabledisabletext, command=toggle_enabled)
-pauseresumebutton = ttk.Button(master=buttonrow, textvariable=pauseresumetext, command=toggle_pause)
-quitbutton = ttk.Button(master=buttonrow, text="Quit", command=do_close)
-
-playbutton.grid(row=0, column=0)
-stopbutton.grid(row=0, column=1)
-enabledisablebutton.grid(row=0, column=2)
-pauseresumebutton.grid(row=0, column=3)
-quitbutton.grid(row=0, column=4)
-
-for i in range(5):
-    buttonrow.grid_columnconfigure(i, weight=1)
-# sublabel.pack()
-# textbox.pack()
-# buttonrow.pack()
-
-# playbutton.pack(side=tkinter.LEFT)
-# stopbutton.pack(side=tkinter.LEFT)
-# enabledisablebutton.pack(side=tkinter.LEFT)
-# pauseresumebutton.pack(side=tkinter.LEFT)
-# quitbutton.pack(side=tkinter.LEFT)
-"""
 signal.signal(signal.SIGINT, lambda x,y: do_close())
 
 window.protocol("WM_DELETE_WINDOW", do_close)

@@ -31,6 +31,8 @@ import time
 from pathlib import Path
 from piper import download as PiperDownloader
 import threading
+import uuid
+import json
 
 class VoiceManager:
     def __init__(self):
@@ -48,6 +50,7 @@ class VoiceManager:
         self.language = config.config["voice_language"]
         self.threads = dict()
 
+
     # wait for cleanup
     def wait_for_downloads(self):
         notified = False
@@ -59,19 +62,24 @@ class VoiceManager:
                 self.threads[thread].join()
         self.threads = dict()
 
-    def __del__(self):
-        self.wait_for_downloads()
-
     def get_voices(self):
         return self.voices
+        
+    def get_voice_path(self, voice: str):
+        
+        if voice in config.config["additional_voices"]:
+            file = config.config["additional_voices"][voice]
+            if Path(file).exists() and Path(file + ".json").exists():
+                return file
+        try:
+            path = PiperDownloader.find_voice(voice, [config.data_folder])
+            return path[0]
+        except:
+            return None
 
     def is_voice_installed(self, voice: str) -> bool:
-        try:
-            PiperDownloader.find_voice(voice, [config.data_folder])
-            return True
-        except:
-            return False
-
+        return self.get_voice_path(voice) is not None
+    
     def get_voice_size(self, voice: str) -> int:
         size = 0
         for i in self.voices[voice]["files"]:
@@ -104,6 +112,45 @@ class VoiceManager:
         if callback is not None:
             callback(voice, result)
 
+    def get_all_installed_voices(self):
+        if config.data_folder is None:
+            return
+        
+        for file in config.data_folder.rglob("*.onnx"):
+            name = Path(file).stem
+            if self.is_voice_installed(name):
+                yield (name, file)
+        
+        for voice in config.config["additional_voices"]:
+            file = config.config["additional_voices"][voice]
+            if Path(file).exists() and Path(file + ".json").exists():
+                
+                yield (voice, Path(file))
+
+    def get_voice_config(self, voice: str) -> dict:
+        filename = None
+        if voice in config.config["additional_voices"]:
+            file = config.config["additional_voices"][voice]
+            if Path(file).exists() and Path(file + ".json").exists():
+                filename = file + ".json"
+                
+
+        if filename is None:
+            try:
+                onnx_path, config_path = PiperDownloader.find_voice(voice, [config.data_folder])
+                filename = config_path
+            except ValueError as e:
+                return None
+        try:
+            with open(filename, "r") as f:
+                return json.load(f)
+        except IOError as e:
+            print("IO Error opening {}".format(filename))
+            return None
+        except json.JSONDecodeError as e:
+            print("JSON Error opening {}".format(filename))
+            return None
+
     def install_voice(self, voice: str, callback=None) -> bool:
         """
         Installs a voice on a separate thread, calling callback when complete.
@@ -129,3 +176,55 @@ class VoiceManager:
             Path(config_path).unlink()
         except:
             pass
+
+    def register_voice(self, voice_path: str):
+        if Path(voice_path).exists() and Path(voice_path + ".json").exists():
+            config.config["additional_voices"][Path(voice_path).stem] = voice_path
+        else:
+            raise ValueError("Could not find config file {}".format(voice_path))
+
+    def deregister_voice(self, voice_path: str):
+        if voice_path in config.config["additional_voices"]:
+            del config.config["additional_voices"]
+
+    def update_alias(self, name: str, voice: str = "", speaker: int|None = None, noise_scale: float|None = None,
+                     length_scale: float|None = None, noise_w: float|None = None, sentence_pause: float|None = None, pitch: float|None = None):
+
+        if not name in config.config["voices"]:
+            if voice is None:
+                raise ValueError("Cannot update/register a new alias without a voice name!")
+
+            config.config["voices"][name] = {
+                "model_name": voice,
+                "speaker_id": speaker or 0,
+                "noise_scale": noise_scale if noise_scale is not None else 0.667,
+                "length_scale": length_scale if length_scale is not None else 1.0,
+                "noise_w": noise_w if noise_w is not None else 0.8,
+                "sentence_pause": sentence_pause if sentence_pause is not None else 0.2, 
+                "pitch": pitch if pitch is not None else 1.0,
+                "uuid": str(uuid.uuid4())
+            }
+        else:
+        
+            if voice is not None:
+                config.config["voices"][name]["model_name"] = voice
+            
+            if speaker is not None:
+                config.config["voices"][name]["speaker_id"] = speaker
+
+            if noise_scale is not None:
+                config.config["voices"][name]["noise_scale"] = noise_scale
+
+            if length_scale is not None:
+                config.config["voices"][name]["length_scale"] = length_scale
+            
+            if noise_w is not None:
+                config.config["voices"][name]["noise_w"] = noise_w
+            
+            if sentence_pause is not None:
+                config.config["voices"][name]["sentence_pause"] = sentence_pause
+
+            if pitch is not None:
+                config.config["voices"][name]["pitch"] = pitch
+
+vm = VoiceManager()

@@ -21,13 +21,11 @@
 import json
 from pathlib import Path
 from appdirs import AppDirs
-import uuid
-import queue
+import psutil
 
 # Global UUID for the program. Definitely generated randomly, definitely has no
 # significance whatsoever :)
 GLOBAL_UUID = "3243f6a8-885a-308d-3131-98a2e0370734"
-messages = queue.Queue() # placeholder
 running = True
 paused = False
 enabled = True
@@ -53,6 +51,8 @@ default_piper_options = {
     "sentence_silence": 0.2,   # How long to pause between sentences
 }
 
+system_mem = psutil.virtual_memory().total // (1024 * 1024) # in MiB
+
 """
 Default configuration.
 """
@@ -65,33 +65,28 @@ config = {
     "udp_server_addr": "0.0.0.0",                     # Address for the UDP server. Not configurable in Speaker.bot.
     "udp_server_port": 6669,                          # Port for the UDP server.
     "voice_language": "en_US",                        # Voice language
-    "default_voice": "Amy",                           # Default voice
+    "default_voice": "amy",                           # Default voice
     "voices": {
-        "Amy": {                                         # Voice name
-            "language": "en_US",                         # language of the voice
-            "model_name": "en_US-amy-medium",            # name of the model, the name of the file without .onnx
-            "piper_options": default_piper_options,      # default options for piper
-            "downloaded": False,                         # whether the voice has been downloaded
-            "path": None,                                # default to data_folder/model_name.onnx
-            "speaker": 0,                                # ID of the speaker
-            "sample_rate": -1,                           # -1 = default to model.json
-            "uuid": ""                                   # UUID placeholder
-        }
+        # "Amy": {
+        #     "voice_name": "en_US-amy-medium",
+        #     "speaker": 0,
+        #     "noise_scale": 0.667,
+        #     ""
+        #     "uuid": (unique uuid)
+        # }
+        #
+        #
+        #
     },
-    "additional_voices": [],                          # Array of paths to additional voices
+    "additional_voices": {},                          # Map of additional voices {"voice_name": "path/to/file.onnx"}
     "use_cuda": False,                                # Whether to use Cuda
     "output_device": None,                            # Audio output device (null = default)
     "volume": 1.0,                                    # Output volume
     "queue_delay": 0.0,                               # Delay before playing voices (to allow time for moderation)
     "max_words": 25,                                  # Maximum number of words
+    "max_memory_usage": min(512, system_mem // 32),   # How much memory in MIB we use before purging old voices. Default to 512 MiB or 1/32 system memory.
 }
 
-def gen_voice_uuid(name: str, info: dict) -> str:
-    summary = "{}@{}@{}@{}@{}".format(name, info["model_name"], json.dumps(info["piper_options"]), info["sample_rate"], info["speaker"])
-
-    return str(uuid.uuid5(uuid.UUID(GLOBAL_UUID), summary))
-
-config["voices"]["Amy"]["uuid"] = gen_voice_uuid("Amy", config["voices"]["Amy"])
 
 config_folder = try_create_folder(dirinfo.user_config_dir)
 data_folder = try_create_folder(Path(dirinfo.user_data_dir) / "voicedata")
@@ -123,8 +118,10 @@ def save_config() -> bool:
     """
     try:
         if config_file is not None:
+            stringified = json.dumps(config)
+
             with open(config_file, "w") as cfgfile:
-                json.dump(config, cfgfile)
+                cfgfile.write(stringified)
                 
             return True
         else:
