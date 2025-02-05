@@ -48,13 +48,11 @@ For an EN-US voice, I recommend Amy Medium.
 
 Requirements:
 
-- Python >= 3.12 (lower versions may work)
+- Python == 3.12 (3.13 is not compatible yet...)
 - [Poetry](https://python-poetry.org)
-- [pipx](https://pipx.pypa.io/)
 
 ```shell
-poetry build
-pipx install dist/*.whl
+poetry install
 ```
 
 ## Running
