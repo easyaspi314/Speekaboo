@@ -19,35 +19,37 @@
 # THE SOFTWARE.
 
 from dataclasses import dataclass
-from config import config
+import queue
+import logging
+from pathlib import Path
 from collections import deque
 import datetime
 from threading import Lock, Thread, Condition
 import uuid
 import json
+import math
+
+import numpy as np
 import cachetools
 from piper import PiperVoice
-from piper import download as PiperDownloader
+from piper.util import audio_float_to_int16
 import psutil
-import threading
+from miniaudio import convert_frames, SampleFormat
+
 import config
-import time
-import queue
-import logging
 from voice_manager import vm
 from audio import audio
-from pathlib import Path
 
 @dataclass
 class MessageInfo:
-    message: str           # Message
-    timestamp: str         # Timestamp
-    voice: str             # Voice to use
-    skip: bool             # Whether to skip this entry
-    censor: bool           # Whether to censor bad words for future use
-    sender: dict           # for future additions
-    id: str                # Unique UUID
-    parsed_data: bytearray # Parsed TTS data
+    message: str                # Message
+    timestamp: str              # Timestamp
+    voice: str                  # Voice to use
+    skip: bool                  # Whether to skip this entry
+    censor: bool                # Whether to censor bad words for future use
+    sender: dict                # for future additions
+    id: str                     # Unique UUID
+    parsed_data: bytearray|None # Parsed TTS data
     def __str__(self):
         return json.dumps(self)
 
@@ -56,13 +58,13 @@ _parsing_queue: queue.Queue[MessageInfo] = queue.Queue()
 _queue: deque[MessageInfo] = deque()
 _condition: Condition = Condition()
 
-def add(message: str, voice: str = "Amy", timestamp: datetime.datetime = datetime.datetime.now(), censor: bool = False):
+def add(message: str, voice: str, timestamp: datetime.datetime = datetime.datetime.now(), censor: bool = False):
     message = message.strip()
-    if len(message) == 0:
+    if len(message) == 0 or not config.enabled:
         return
-    
+
     with _condition:
-        id = uuid.uuid4()
+        msg_id = uuid.uuid4()
         msgtoadd = MessageInfo(
             message = message,
             timestamp = timestamp.astimezone(datetime.UTC).isoformat().replace("+00:00", "Z"),
@@ -70,14 +72,17 @@ def add(message: str, voice: str = "Amy", timestamp: datetime.datetime = datetim
             skip = False,
             censor = censor,
             sender = {},
-            id = str(id),
+            id = str(msg_id),
             parsed_data=None
         )
-        
-        _parsing_queue.put(msgtoadd)
-        from server import ws_thread
 
-        ws_thread.send_event(event_source="texttospeech", event_type="textqueued", data= {
+        _parsing_queue.put(msgtoadd)
+
+        config.Event(
+            "WebsocketEvent",
+            "texttospeech",
+            "textqueued",
+            {
                 "id": msgtoadd.id,
                 "timestamp": msgtoadd.timestamp,
                 "text": message,
@@ -87,9 +92,10 @@ def add(message: str, voice: str = "Amy", timestamp: datetime.datetime = datetim
                 "pitch":0.0,
                 "volume": 1.0,
                 "rate": 0.0
-            })
+            }
+        )
         _condition.notify_all()
-        return str(id)
+        return str(msg_id)
     
 
 def pop() -> MessageInfo|None:
@@ -111,8 +117,9 @@ def num_items() -> int:
 
 def to_list() -> list[MessageInfo]:
     with _lock:
-        lst = [x for x in _queue]
-        print(lst)
+        lst = list(_queue)
+        return lst
+
 
 def toggle_skip(message: MessageInfo):
     with _lock:
@@ -127,61 +134,112 @@ def clear():
         _queue.clear()
 
 
-@cachetools.cached(cache=cachetools.LRUCache(maxsize = 512, getsizeof=lambda x: x[1]))
-def get_voice_impl(voicepath: str) -> tuple[PiperVoice, float]: # model, memory usage
+@cachetools.cached(cache=cachetools.LRUCache(maxsize = config.config["max_memory_usage"], getsizeof=lambda x: x[1]))
+def get_voice_impl(voicepath: Path) -> tuple[PiperVoice, float]: # model, memory usage
     """
     Since these voices can take up a lot of memory but also take a lot of time to load,
     we use cachetools to make a least 
     """
-    print("Loading voice {}".format(Path(voicepath).stem))
+    logging.info("Loading voice %s", voicepath.stem)
+    config.Event(
+        "WebsocketEvent",
+        "internal_event",
+        "loading_voice",
+        {
+            "voice": voicepath.stem
+        }
+    )
     proc = psutil.Process()
     # estimate memory usage, since python doesn't manage the memory
     start_memory_usage = proc.memory_info().rss
-    voice = PiperVoice.load(voicepath)
+
+    try:
+        voice = PiperVoice.load(voicepath, use_cuda=config.config["use_cuda"])
+    except Exception as e: # pylint:disable=broad-exception-caught
+        logging.error("Error initializing acceleration, using CPU instead", exc_info=e)
+        config.config["use_cuda"] = False
+        voice = PiperVoice.load(voicepath, use_cuda=False)
+
     end_memory_usage = proc.memory_info().rss
     diff_in_mb = (end_memory_usage - start_memory_usage) / (1024.0 * 1024.0)
-    print("Estimated memory usage: {} MiB".format(diff_in_mb))
+    logging.info("Estimated memory usage: %.2f MiB", diff_in_mb)
+    config.Event(
+        "WebsocketEvent",
+        "internal_event",
+        "loaded_voice",
+        {
+            "voice": voicepath.stem,
+            "mem": diff_in_mb
+        }
+    )
     return (voice, diff_in_mb)
 
-def get_voice(voicepath: str) -> PiperVoice:
+def get_voice(voicepath: Path) -> PiperVoice:
     return get_voice_impl(voicepath)[0]
 
-class TTSThread(threading.Thread):
+class TTSThread(Thread):
     def __init__(self):
-        super().__init__()
+        super().__init__(name="TTS Parsing Thread")
         self.queue = queue.Queue()
         self.running = False
 
     def parse_tts(self, message: MessageInfo):
 
-        from server import ws_thread
         try:
-            if not message.voice in config.config["voices"]:
-                raise ValueError("Invalid voice {}".format(message.voice))
-            
+            if message.voice not in config.config["voices"]:
+                raise ValueError(f"Invalid voice {message.voice}")
+
             voice_info = config.config["voices"][message.voice]
+
+            if voice_info.get("model_name", "") == "":
+                raise ValueError(f"Voice alias {message.voice} doesn't have a name assigned!")
+
             voice_path = vm.get_voice_path(voice_info["model_name"])
-            if voice_path == None:
-                raise ValueError("Cannot find voice path for {}".format(voice_info["model_name"]))
-            
-            
+            if voice_path is None:
+                raise ValueError(f"Cannot find voice path for {voice_info["model_name"]}")
+
             voice = get_voice(voice_path)
 
-            print("Speaker ID: {}".format(voice_info.get("speaker_id", 0)))
+            logging.info("Speaker ID: %d", voice_info.get("speaker_id", 0))
 
             raw_pcms = []
+
+            volume = voice_info["volume"]
+
+            num_words = len(message.message.split())
+
+            if config.config["max_words"] != 0 and num_words > config.config["max_words"]:
+                return bytearray()
+
             for sentence in voice.synthesize_stream_raw(message.message,
                     speaker_id=voice_info.get("speaker_id", 0),
                     length_scale=voice_info.get("length_scale", 1.0),
-                    noise_scale=voice_info.get("noise_scale", 0.667)
+                    noise_scale=voice_info.get("noise_scale", 0.667),
+                    noise_w=voice_info.get("noise_w", 0.8)
 
                     ):
+                # Adjust the volume
+                if abs(volume - 1.0) > 0.01: # volume != 1.0
+
+                    # Convert back to Signed16 (annoyingly, Piper converts from float to int16 beforehand)
+                    le16 = np.dtype(np.int16).newbyteorder('<')
+                    buf = np.frombuffer(sentence, le16)
+
+                    # Normalize the volume for a more natural curve
+                    # https://stackoverflow.com/a/1165188
+                    # 32 seems to feel good.
+                    normalized_vol = max(0.001, min((math.pow(32.0, volume) - 1) / (32.0 - 1), 1.0))
+                    # Multiply by the normalized volume and convert back to LE16
+                    buf = audio_float_to_int16(buf, min(32767.0 * normalized_vol, 32767.0)) # piper/util.py
+                    # Convert to bytes
+                    sentence = buf.tobytes()
+
                 raw_pcms.append(sentence)
 
+            # Join into a raw buffer
             wav_data = b''.join(raw_pcms)
 
-            from miniaudio import convert_frames, SampleFormat
-
+            # Now convert the sample rate to the native rate.
             converted = convert_frames(SampleFormat.SIGNED16,
                                        from_numchannels=1,
                                        from_samplerate=voice.config.sample_rate,
@@ -190,38 +248,61 @@ class TTSThread(threading.Thread):
                                        to_numchannels=1,
                                        to_samplerate=audio.get_sample_rate())
 
-            # I think this is correct?
-            duration = len(converted) / audio.get_sample_rate() / 2 * 1000
+            # Get the duration in milliseconds
+            duration = round(len(converted) / 2 / audio.get_sample_rate() * 1000, 2)
 
-            ws_thread.send_event(event_source="texttospeech", event_type="engineprocessed", data= {
-                "id": message.id,
-                "timestamp": message.timestamp,
-                "text": message.message,
-                "duration": duration,
-                "engineName": "Speekaboo Piper",
-                "voiceName": voice_info["model_name"],
-                "pitch":0.0,
-                "volume": 1.0,
-                "rate": 0.0
-            })
+            # Emit an event to signal that we processed it
+            config.Event(
+                "WebsocketEvent",
+                "texttospeech",
+                "engineprocessed",
+                {
+                    "id": message.id,
+                    "timestamp": message.timestamp,
+                    "text": message.message,
+                    "duration": duration,
+                    "engineName": "Speekaboo Piper",
+                    "voiceName": voice_info["model_name"],
+                    "pitch":0.0,
+                    "volume": volume,
+                    "rate": 0.0
+                }
+            )
             return converted
 
-        except Exception as e:
-            logging.error(e, exc_info=True)
-            return bytearray()
-#        pass
+        except Exception as e: # pylint:disable=broad-exception-caught
+            logging.error("Exception in parse_tts:", exc_info=e)
+            config.Event(
+                "WebsocketEvent",
+                "texttospeech",
+                "error",
+                {
+                    "id": message.id,
+                    "timestamp": message.timestamp,
+                    "text": message.message,
+                    "duration": 0.0,
+                    "engineName": "Speekaboo Piper",
+                    "voiceName": message.voice,
+                    "pitch":0.0,
+                    "volume": 0.0,
+                    "rate": 0.0,
+                    "speekaboo_exception": f"{e.args[0]}",
+                }
+            )
+            return None
+
 
     def stop(self):
         self.running = False
+        if not self.is_alive():
+            return
         with _condition:
             _condition.notify_all()
 
         self.join()
-        print("Joined TTS thread")
+        logging.info("Joined TTS thread")
 
     def run(self):
-        # import pdb
-        #pdb.set_trace(header="TTS thread")
         self.running = True
         while self.running:
             with _condition:
@@ -229,13 +310,15 @@ class TTSThread(threading.Thread):
                     _condition.wait()
                 if self.running:
                     message = _parsing_queue.get()
+
                     message.parsed_data = self.parse_tts(message)
+                    
                     _parsing_queue.task_done()
+                    if message.parsed_data is None:
+                        continue
                     with _lock:
                         _queue.append(message)
-                
-        print("Done running TTS thread")
+
+        logging.info("Done running TTS thread")
 
 tts_thread = TTSThread()
-tts_thread.start()
-            

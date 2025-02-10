@@ -16,7 +16,7 @@ For an EN-US voice, I recommend Amy Medium.
 
 - [ ] Not spaghetti codebase
 - [ ] Setup wizard (you need to manually add voices)
-- [ ] Functional UI (half the things don't work lol)
+- [x] Functional UI
 - [ ] Compatibility of the Speaker.bot WS/UDP API
   - [x] Basic speaking functionality
   - [x] Speak requests
@@ -30,9 +30,9 @@ For an EN-US voice, I recommend Amy Medium.
   - [x] Basic TTS
   - [x] Voice customization
   - [ ] Multiple/random voices (each voice alias is one voice only)
-  - [ ] Speaker IDs (untested)
+  - [x] Speaker IDs
   - [ ] Pitch shift
-  - [ ] Volume
+  - [x] Volume
   - [ ] Arabic support. piper-phonemize-cross does not include Tashkeel.
 - [x] Downloading/uninstalling new voices
 - [x] Adding custom .onnx voices
@@ -40,7 +40,7 @@ For an EN-US voice, I recommend Amy Medium.
 - [ ] Profanity filter
 - [ ] Interface to cancel or review messages
 - [ ] Random voices/multiple voice aliases (todo, needs proper memory overhead management)
-- [ ] In-GUI configuration
+- [x] In-GUI configuration
   - [x] Creating aliases
 - [ ] Chat integration (NOT PLANNED, Streamer.bot can send commands)
 
@@ -48,7 +48,7 @@ For an EN-US voice, I recommend Amy Medium.
 
 Requirements:
 
-- Python == 3.12 (3.13 is not compatible yet...)
+- Python 3.10-3.12 (3.13 is not compatible yet due to piper-phonemize-cross not being updated yet)
 - [Poetry](https://python-poetry.org)
 
 ```shell
@@ -65,15 +65,10 @@ speekaboo
 
 ## Initial setup
 
-As the program is far from completion, the setup step is not as straightforward as I want it to be,
-mostly since I need to lay down the framework for dynamically updating the GUI.
-
 1. Launch the program
 2. Go to Download Voices, and select a voice. For English (US) I find Amy Medium (en_US-amy-medium) to be a good choice.
 3. Click "Install/uninstall selected voice"
-4. Restart the program.
-5. Go to the Voice Aliases tab, and click "Add new alias", and pick a name
-6. Pick the voice name in the Voice dropdown
-7. Click "Save changes"
-8. Restart the program again.
-9. Pick the new name in the dropdown, enter some text, and hit enter!
+4. Go to the Voice Aliases tab, and click "Add new alias", and pick a name
+5. Pick the voice name in the Voice dropdown
+6. Click "Save changes"
+7. Pick the new name in the dropdown, enter some text, and hit enter!

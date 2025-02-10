@@ -1,22 +1,26 @@
 [project]
 name = "speekaboo"
-version = "0.1.0"
+version = "0.2.0"
 description = "A drop-in replacement for Speaker.bot using Piper TTS"
 authors = [
     {name = "easyaspi314",email = "6258309+easyaspi314@users.noreply.github.com"}
 ]
 license = {text = "MIT"}
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
+
 dependencies = [
     'websockets>=14.2',
     'miniaudio>=1.61', 
-    'piper_phonemize_cross>=1.2.1',
+    'piper_phonemize_cross>=1.2.0',
     'onnxruntime>=1.19.0',
     'appdirs>=1.4.4',
-    'ttkbootstrap==1.10.1',
+    'tkfilebrowser',
+    'darkdetect',
+    'tkinter-tooltip',
     'psutil',
-    'cachetools'
+    'cachetools',
+    'sv_ttk'
 ]
 
 [project.scripts]
