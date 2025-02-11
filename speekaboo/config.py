@@ -150,7 +150,13 @@ def load_config():
             logging.error("Error reading config file: %s", e)
         except json.JSONDecodeError as e:
             logging.error("Error parsing config file: %s", e)
-    return (None, default_config)
+
+        return (None, default_config)
+
+    # assume first use
+    return (config_file_path, default_config)
+
+
 
 config_file, config = load_config()
 
@@ -162,26 +168,24 @@ def save_config() -> bool:
     """
 
     try:
-        if config_file is not None:
+        if config_folder is not None:
             if "" in config["voices"]:
                 del config["voices"][""]
 
             stringified = json.dumps(config, indent=4)
 
-            with open(config_file, "w", encoding="utf-8") as cfgfile:
+            with open(config_folder / "Speekaboo.json", "w", encoding="utf-8") as cfgfile:
                 cfgfile.write(stringified)
 
             return True
 
-        logging.error("Config folder is not writeable, skipping.")
-        return False
+
     except IOError as e:
         logging.error("Error saving config file: %s", e)
-        return False
     except (ValueError, TypeError, RecursionError) as e:
         logging.error("Error encoding config file! This is a bug!", exc_info=e)
-        return False
 
+    return False
 
 stdout_handler = logging.StreamHandler(sys.stdout)
 handlers = [stdout_handler]

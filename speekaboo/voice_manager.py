@@ -187,7 +187,8 @@ class VoiceManager:
             Path(onnx_path).unlink()
             Path(config_path).unlink()
             config.Event("voices_changed", voice, False)
-        except IOError:
+        except IOError as e:
+            logging.info("error", exc_info=e)
             pass
 
     def register_voice(self, voice_path: str):
@@ -206,8 +207,8 @@ class VoiceManager:
 
     def get_used_aliases(self, voice: str) -> list[str]:
         used_aliases: list[str] = []
-        for voice in config.config["voices"]:
-            if config.config["voices"][voice].get("model_name", "") == voice:
+        for alias in config.config["voices"].values():
+            if alias.get("model_name", "") == voice:
                 used_aliases.append(voice)
         return used_aliases
     

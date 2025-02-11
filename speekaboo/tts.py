@@ -24,6 +24,7 @@ import logging
 from pathlib import Path
 from collections import deque
 import datetime
+from datetime import timezone
 from threading import Lock, Thread, Condition
 import uuid
 import json
@@ -67,7 +68,7 @@ def add(message: str, voice: str, timestamp: datetime.datetime = datetime.dateti
         msg_id = uuid.uuid4()
         msgtoadd = MessageInfo(
             message = message,
-            timestamp = timestamp.astimezone(datetime.UTC).isoformat().replace("+00:00", "Z"),
+            timestamp = timestamp.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
             voice = voice,
             skip = False,
             censor = censor,
@@ -196,7 +197,7 @@ class TTSThread(Thread):
 
             voice_path = vm.get_voice_path(voice_info["model_name"])
             if voice_path is None:
-                raise ValueError(f"Cannot find voice path for {voice_info["model_name"]}")
+                raise ValueError(f"Cannot find voice path for {voice_info['model_name']}")
 
             voice = get_voice(voice_path)
 

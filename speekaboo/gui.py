@@ -162,7 +162,7 @@ class MainTab(ttk.Frame, config.Observer):
         self.log_box.pack(expand=True, fill=tk.BOTH)
 
         self.log_box.configure(yscrollcommand=log_v_scrollbar.set)
-        
+
         scrollable_wrapper.add(log_frame, weight=1)
 
         queue_frame= ttk.Frame(scrollable_wrapper)
@@ -177,7 +177,7 @@ class MainTab(ttk.Frame, config.Observer):
         self.queue_box.pack(expand=True, fill=tk.BOTH)
 
         self.queue_box.configure(yscrollcommand=queue_v_scrollbar.set)
-        
+
         scrollable_wrapper.add(queue_frame, weight=1)
 
         self.grid_rowconfigure(row, weight=1)
@@ -261,7 +261,7 @@ class MainTab(ttk.Frame, config.Observer):
         flag = len(self.alias_select["values"]) == 0 and len(aliases) > 0
         selected = self.alias_select.get()
         # removed the selected voice!
-        if selected not in config.config["voices"]:
+        if len(aliases) > 0 and selected not in config.config["voices"]:
             flag = True
 
         self.alias_select["values"] = aliases
@@ -283,29 +283,29 @@ class MainTab(ttk.Frame, config.Observer):
         if window is None or data is None:
             logging.info("Event on dead instance")
             return
-        
+
         if event_source == "internal_event":
             match event_type:
                 case "loading_voice":
-                    self.write_to_log(f"Loading voice: {data["voice"]}")
+                    self.write_to_log(f"Loading voice: {data['voice']}")
                 case "loaded_voice":
-                    self.write_to_log(f"Loaded voice {data["voice"]}, Estimated memory usage: {data["mem"]:.1f} MiB")
+                    self.write_to_log(f"Loaded voice {data['voice']}, Estimated memory usage: {data['mem']:.1f} MiB")
                 case "error":
-                    self.write_to_log(f"Error: {data["message"]}")
+                    self.write_to_log(f"Error: {data['message']}")
                 case "info":
-                    self.write_to_log(f"Info: {data["message"]}")
+                    self.write_to_log(f"Info: {data['message']}")
         else:
             match event_type:
                 case "textqueued":
-                    self.write_to_log(f"Queued: {data["text"]}")
+                    self.write_to_log(f"Queued: {data['text']}")
                     self.write_to_queue(data)
                 case "engineprocessed":
-                    self.write_to_log(f"Processed: {data["text"]}")
+                    self.write_to_log(f"Processed: {data['text']}")
                 case "playing":
-                    self.write_to_log(f"Playing: {data["text"]}")
+                    self.write_to_log(f"Playing: {data['text']}")
                     self.queue_box.delete(data["id"])
                 case "error":
-                    self.write_to_log(f"Error: {data["text"]}: {data.get("speekaboo_exception", "Unknown")}")
+                    self.write_to_log(f"Error: {data['text']}: {data.get('speekaboo_exception', 'Unknown')}")
                     self.queue_box.delete(data["id"])
 
 
@@ -408,6 +408,15 @@ class VoiceAliasesTab(ttk.Frame):
             """
             Saves the voice
             """
+            if self.voice_widget.widget.current() == -1:
+                if len(self.voices) == 0:
+
+                    messagebox.showerror(parent=window, message="Please select a voice. Voices can be downloaded in the Manage Voices tab.")
+                else:
+                    messagebox.showerror(parent=window, message="Please select a voice first.")
+
+                return
+
             vm.update_alias(
                 name= voice,
                 voice = self.voices[self.voice_widget.widget.current()],
@@ -464,9 +473,6 @@ class VoiceAliasesTab(ttk.Frame):
         """
         Callback for when the Add alias button is pressed
         """
-        if len(config.config["voices"]) == 0:
-            messagebox.showerror(parent=window, message="Add some voices in the Manage Voices tab first!")
-            return
 
         # TODO: theming
         newname = simpledialog.askstring(
@@ -495,6 +501,9 @@ class VoiceAliasesTab(ttk.Frame):
         config.Event("aliases_list_updated")
 
     def remove_alias_callback(self):
+        """
+        Removes an alias.
+        """
         if len(self.aliases.selection()) != 1:
             messagebox.showerror(parent=window, message="Select a voice first!")
             return
@@ -507,7 +516,7 @@ class VoiceAliasesTab(ttk.Frame):
 
         if not result:
             return
-        
+
         del config.config["voices"][alias]
 
         self.aliases.delete(alias)
@@ -621,21 +630,22 @@ class DownloadVoicesTab(ttk.Frame, config.Observer):
         """
         Observer callback. This may be called after the window is destroyed.
         """
+
         if window is None:
             return
-
-        # not in list and not installed? add it to additional voices
+        # not in list and installing? add it to additional voices
         if not self.voices_list.exists(voice) and installed:
             self.voices_list.insert("/additional_voices", tk.END, iid=voice, text=voice)
             return
 
+        
         item = self.voices_list.item(voice)
         parent = self.voices_list.parent(voice)
-
         if parent == '/additional_voices' and not installed:
             self.voices_list.delete(voice)
         elif parent != '' and isinstance(item["values"], list):
             item["values"][1] = "Yes" if installed else "No"
+
             self.voices_list.item(voice, values=item["values"])
 
     def check_for_alias(self, name: str):
@@ -651,7 +661,7 @@ class DownloadVoicesTab(ttk.Frame, config.Observer):
 
             messagebox.showerror(
                 parent=window,
-                message=f"This voice model is used by the following {message}: {", ".join(used_aliases)}"
+                message=f"This voice model is used by the following {message}: {', '.join(used_aliases)}. Remove the aliases or change the linked voice model first."
             )
             return True
 
@@ -682,13 +692,12 @@ class DownloadVoicesTab(ttk.Frame, config.Observer):
                 item["values"][1] = "Downloading"
                 vm.install_voice(selection)
 
-            self.voices_list.item(selection, values=item["values"])
+                self.voices_list.item(selection, values=item["values"])
 
     def handle_addmanualbutton(self):
         """
         Handler for adding manual voices
         """
-
 
         real_treeview_insert = ttk.Treeview.insert
 
@@ -698,14 +707,17 @@ class DownloadVoicesTab(ttk.Frame, config.Observer):
                 TkFileBrowser has a bug where if you bookmark a mounted drive on Linux, it will crash
                 because it tries to add the same bookmark twice.
 
-                I might fork the old file browser, bugs aside it is so much nicer than the other solution
+                I might fork the old file browser, bugs aside it is so much nicer than native Tk.
             """
             if iid is not None and self.exists(iid):
                 return str(iid)
-            return real_treeview_insert(self, parent, index, iid, **kwargs)
 
+            return real_treeview_insert(self, parent, index, iid, **kwargs)
+        # patch treeview
         ttk.Treeview.insert = treeview_insert_patch
+        # ask for file
         path = tkfilebrowser.askopenfilename(parent=self, filetypes=[("ONNX voice model (*.onnx)", "*.onnx")])
+        # unpatch treeview
         ttk.Treeview.insert = real_treeview_insert
 
         if len(path) == 0: # user pressed cancel
@@ -718,11 +730,11 @@ class DownloadVoicesTab(ttk.Frame, config.Observer):
         except ValueError as e:
             messagebox.showerror(
                 parent=window,
-                message="Could not open voice model. Make sure that the onnx.json file is in the same directory."
+                message="Could not open voice model. Make sure when installing VOICE.onnx, VOICE.onnx.json is in the same directory."
             )
-            logging.error("Failed to find file", exc_info = e)
+            logging.error("Failed to find file", exc_info=e)
 
- 
+
     def __init__(self, parent, *args, **kwargs):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         config.Observer.__init__(self)
@@ -794,7 +806,7 @@ class DownloadVoicesTab(ttk.Frame, config.Observer):
                 categorized[code] = {}
 
                 # example: English (United States)
-                friendly_name = f"{value["language"]["name_english"]} ({value["language"]["country_english"]})"
+                friendly_name = f"{value['language']['name_english']} ({value['language']['country_english']})"
                 self.voices_list.insert("", "end", iid="/" + code, text=friendly_name)
                 language_ids.add(code)
             is_installed = "Yes" if vm.is_voice_installed(voice) else "No"
@@ -917,7 +929,7 @@ class SettingsTab(ttk.Frame):
         if config.config["output_device"] is None:
             self.device_var.set("[Default]")
         elif config.config["output_device"] not in self.devices_list:
-            self.device_var.set(f"(not found) {config.config["output_device"]}")
+            self.device_var.set(f"(not found) {config.config['output_device']}")
         else:
             self.device_var.set(config.config["output_device"])
 

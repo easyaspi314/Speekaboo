@@ -12,7 +12,7 @@ requires-python = ">=3.10"
 dependencies = [
     'websockets>=14.2',
     'miniaudio>=1.61', 
-    'piper_phonemize_cross>=1.2.0',
+    'piper_phonemize_fix>=1.2.1',
     'onnxruntime>=1.19.0',
     'appdirs>=1.4.4',
     'tkfilebrowser',
@@ -20,12 +20,14 @@ dependencies = [
     'tkinter-tooltip',
     'psutil',
     'cachetools',
-    'sv_ttk'
+    'sv_ttk',
+    'cuda_available',
+    'pywin32; sys_platform == "win32"'
 ]
 
 [project.scripts]
 speekaboo = "speekaboo.__main__:main"
 
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
