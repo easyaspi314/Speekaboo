@@ -72,3 +72,11 @@ speekaboo
 5. Pick the voice name in the Voice dropdown
 6. Click "Save changes"
 7. Pick the new name in the dropdown, enter some text, and hit enter!
+
+## Differences in this fork
+
+Fixed GUI race condition causing frequent TclError("Item ... not found") popups and audio shutdown under load.
+Queue row deletions are now serialized on the main Tk thread using a dedicated processor queue, eliminating overlapping canvas operations in Treeview.
+Improved stability under heavy queuing (rapid messages or channel point redemptions).
+Fixed an issue with the playback queue, all messages are now processed and played reliably exactly once.
+
