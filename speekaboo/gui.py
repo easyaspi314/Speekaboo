@@ -147,6 +147,14 @@ class MainTab(ttk.Frame, config.Observer):
         self.observe("aliases_list_updated", self.update_alias)
         row = 0
 
+        # ← YOUR NEW VARIABLES
+        self.busy_deleting = False
+        self.queued_deletions = 0
+        self.pending_iids = []  # We'll store the iids in order
+
+        # Start the deletion processor
+        self.process_deletion_queue()
+        
         scrollable_wrapper = ttk.Panedwindow(self, orient=tk.VERTICAL)
         scrollable_wrapper.grid(row=row, column=0, columnspan=5, sticky=tk.NSEW)        
 
@@ -303,12 +311,34 @@ class MainTab(ttk.Frame, config.Observer):
                     self.write_to_log(f"Processed: {data['text']}")
                 case "playing":
                     self.write_to_log(f"Playing: {data['text']}")
-                    self.queue_box.delete(data["id"])
+                    iid = data["id"]
+                    self.pending_iids.append(iid)
+                    self.queued_deletions += 1
+                    # No direct delete — just queue it                    
                 case "error":
                     self.write_to_log(f"Error: {data['text']}: {data.get('speekaboo_exception', 'Unknown')}")
-                    self.queue_box.delete(data["id"])
+                    iid = data["id"]
+                    self.pending_iids.append(iid)
+                    self.queued_deletions += 1
 
+    def process_deletion_queue(self):
+        """
+        Runs continuously on the main Tk thread.
+        Waits when nothing to delete, processes one at a time when queued.
+        """
+        if self.queued_deletions > 0 and not self.busy_deleting:
+            self.busy_deleting = True
+            iid = self.pending_iids.pop(0)  # Get the oldest
+            try:
+                self.queue_box.delete(iid)
+            except tk.TclError:
+                # Harmless if already gone
+                pass
+            self.queued_deletions -= 1
+            self.busy_deleting = False
 
+        # Schedule next check (runs again very soon on main thread)
+        window.after(100, self.process_deletion_queue)
 
 main_tab = MainTab(window)
 notebook.add(main_tab, text="Main")
