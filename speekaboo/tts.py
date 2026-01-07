@@ -24,6 +24,7 @@ import logging
 from pathlib import Path
 from collections import deque
 import datetime
+import time
 from datetime import timezone
 from threading import Lock, Thread, Condition
 import uuid
@@ -317,6 +318,11 @@ class TTSThread(Thread):
                     _parsing_queue.task_done()
                     if message.parsed_data is None:
                         continue
+
+                    # ← NEW: Wait until playback queue has room (length < 1)
+                    while len(_queue) >= 1 and self.running:
+                        time.sleep(0.05)
+                    
                     with _lock:
                         _queue.append(message)
 
