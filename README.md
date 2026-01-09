@@ -79,4 +79,8 @@ Fixed GUI race condition causing frequent TclError("Item ... not found") popups 
 Queue row deletions are now serialized on the main Tk thread using a dedicated processor queue, eliminating overlapping canvas operations in Treeview.
 Improved stability under heavy queuing (rapid messages or channel point redemptions).
 Fixed an issue with the playback queue, all messages are now processed and played reliably exactly once.
+Disabled automatic voice list refresh on startup to improve reliability.
+Added refresh button and status to the Manage Voices tab.
+Refresh runs in the background now and doesn't freeze the entire program when servers are busy.
+
 
