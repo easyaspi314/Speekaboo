@@ -23,6 +23,7 @@ import re
 import logging
 import sys
 import math
+import threading
 import signal
 from typing import Any, Literal
 
@@ -770,11 +771,15 @@ class DownloadVoicesTab(ttk.Frame, config.Observer):
         config.Observer.__init__(self)
 
         self.observe("voices_changed", self.set_installed)
+        self.refresh_button = ttk.Button(self, text="Refresh Voice List", command=self.on_refresh_click)
+        self.refresh_button.grid(row=0, column=0, columnspan=1, padx=5, pady=5, sticky=tk.NSEW)
+        self.refresh_status = ttk.Label(self, text="", foreground="gray")
+        self.refresh_status.grid(row=0, column=1, padx=5, pady=(10, 5), sticky=tk.W)
+        self.grid_columnconfigure(1, weight=1)    # Allow status to expand
         treeview_container = ttk.Frame(self)
-        treeview_container.grid(row=0, column=0, columnspan=2, sticky=tk.NSEW)
+        treeview_container.grid(row=1, column=0, columnspan=2, sticky=tk.NSEW)
         treeview_container.grid_columnconfigure(0, weight=1)
-        treeview_container.grid_rowconfigure(0, weight=1)
-        self.voices_list = ttk.Treeview(treeview_container, selectmode="browse", columns=("C1", "C2", "C3", "C4"))
+        treeview_container.grid_rowconfigure(0, weight=1)        self.voices_list = ttk.Treeview(treeview_container, selectmode="browse", columns=("C1", "C2", "C3", "C4"))
         self.voices_list.column("#0", stretch=tk.YES)
         self.voices_list.column("C1", width=70, stretch=tk.NO)
         self.voices_list.column("C2", width=70, stretch=tk.NO)
@@ -793,13 +798,13 @@ class DownloadVoicesTab(ttk.Frame, config.Observer):
 
         self.parse_voices()
         self.installbutton=ttk.Button(self, text="Install/uninstall selected voice", command=self.handle_installbutton)
-        self.installbutton.grid(row=1,column=0, padx=5, pady=5, sticky=tk.NSEW)
+        self.installbutton.grid(row=2,column=0, padx=5, pady=5, sticky=tk.NSEW)
         self.addmanualbutton= ttk.Button(self, text="Add voice manually from file", command = self.handle_addmanualbutton)
-        self.addmanualbutton.grid(row=1, column=1, padx=5, pady=5, sticky=tk.NSEW)
+        self.addmanualbutton.grid(row=2, column=1, padx=5, pady=5, sticky=tk.NSEW)
         self.pack(expand=True, fill="y")
         for i in range(2):
             self.grid_columnconfigure(i, weight=1, uniform='install_button')
-        self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
     # https://stackoverflow.com/a/14822210
     @staticmethod
     def convert_size(size_bytes):
@@ -847,6 +852,25 @@ class DownloadVoicesTab(ttk.Frame, config.Observer):
                                         is_installed,
                                         friendly_size,
                                         value["num_speakers"]))
+
+    def on_refresh_click(self):
+        """Called when the user clicks the Refresh button"""
+        self.refresh_button.config(state="disabled")
+        self.refresh_status.config(
+            text="Refreshing voice list. This may take a while, thanks for your patience...",
+            foreground="orange"
+        )
+
+        def _refresh_thread():
+            vm.refresh_voices()  # ← Calls the method in VoiceManager
+            window.after(0, self._refresh_complete)
+
+        threading.Thread(target=_refresh_thread, daemon=True).start()
+
+    def _refresh_complete(self):
+        self.refresh_status.config(text="Voice list updated successfully!", foreground="green")
+        self.refresh_button.config(state="normal")
+        window.after(8000, lambda: self.refresh_status.config(text=""))
 
 download_voices_tab = DownloadVoicesTab(window)
 notebook.add(download_voices_tab, text="Manage Voices")
