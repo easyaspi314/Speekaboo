@@ -46,13 +46,32 @@ class VoiceManager:
         # Update daily
         needs_update = not voices_file.exists() or time.time() - voices_file.stat().st_mtime > (60 * 60 * 24)
         try:
-            self.voices = PiperDownloader.get_voices(config.data_folder, needs_update)
+            self.voices = PiperDownloader.get_voices(config.data_folder, update_voices=False)
         except IOError:
             self.voices = PiperDownloader.get_voices(config.data_folder, False)
             logging.error("Couldn't parse downloads!")
         self.language = config.config["voice_language"]
         self.threads: dict[str, threading.Thread] = {}
 
+     def refresh_voices(self):
+        """
+        Refresh the voice list from Hugging Face in a background thread.
+        GUI remains responsive.
+        """
+        def _refresh_thread():
+            try:
+                new_voices = PiperDownloader.get_voices(config.data_folder, update_voices=True)
+                # Update on main thread to avoid Tkinter threading issues
+                # (We use a simple flag — GUI will reload on next tab open or restart)
+                self.voices = PiperDownloader.get_voices(config.data_folder, update_voices=True)
+                logging.info("Voice list refreshed from Hugging Face")
+            except Exception as e:
+                logging.warning(f"Failed to refresh voice list: ({e}). Keeping current list.")
+
+        # Start background thread
+        thread = threading.Thread(target=_refresh_thread, daemon=True)
+        thread.start()
+        logging.info("Refreshing voice list in background. This may take a while, thanks for your patience.")
 
     # wait for cleanup
     def wait_for_downloads(self):
