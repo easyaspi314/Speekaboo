@@ -73,7 +73,7 @@ window.minsize(width=800, height=500)
 
 # Sun Valley theme
 # Use darkdetect to match the system theme
-sv_ttk.set_theme(darkdetect.theme())
+sv_ttk.set_theme(darkdetect.theme() or "Light")
 
 # Give the lists some padding.
 style = ttk.Style()
