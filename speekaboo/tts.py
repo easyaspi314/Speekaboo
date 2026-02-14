@@ -102,7 +102,7 @@ def add(message: str, voice: str, timestamp: datetime.datetime = datetime.dateti
 def pop() -> MessageInfo|None:
     with _lock:
         if len(_queue) > 0:
-            return _queue.pop()
+            return _queue.popleft()
         else:
             return None
 
