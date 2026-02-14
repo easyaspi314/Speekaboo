@@ -27,7 +27,7 @@ import signal
 from typing import Any, Literal
 
 import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog
+from tkinter import TclError, ttk, messagebox, simpledialog
 
 import tkfilebrowser
 import tktooltip
@@ -829,7 +829,12 @@ class ConfigVar(tk.Variable):
     Wrapper for Tk variables to make them automatically write to config.config
     """
     def write_to_config(self, _var, _index, _mode):
-        val = self.get()
+        val: str | int | float = 0
+        try:
+            val = self.get()
+        except TclError:
+            return
+
         if isinstance(config.config[self.key_name], bool):
             val = bool(val)
 
