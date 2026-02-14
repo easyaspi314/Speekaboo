@@ -811,12 +811,13 @@ class DownloadVoicesTab(ttk.Frame, config.Observer):
                 language_ids.add(code)
             is_installed = "Yes" if vm.is_voice_installed(voice) else "No"
             friendly_size = self.convert_size(vm.get_voice_size(voice))
-            self.voices_list.insert("/" + code, "end", text=value["name"], iid=value["key"],
-                                    values=(
-                                        value["quality"],
-                                        is_installed,
-                                        friendly_size,
-                                        value["num_speakers"]))
+            if not self.voices_list.exists(value["key"]):
+                self.voices_list.insert("/" + code, "end", text=value["name"], iid=value["key"],
+                                        values=(
+                                            value["quality"],
+                                            is_installed,
+                                            friendly_size,
+                                            value["num_speakers"]))
 
 download_voices_tab = DownloadVoicesTab(window)
 notebook.add(download_voices_tab, text="Manage Voices")
