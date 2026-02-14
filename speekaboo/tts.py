@@ -26,6 +26,7 @@ from collections import deque
 import datetime
 from datetime import timezone
 from threading import Lock, Thread, Condition
+from time import sleep
 import uuid
 import json
 import math
@@ -54,85 +55,76 @@ class MessageInfo:
     def __str__(self):
         return json.dumps(self)
 
-_lock: Lock = Lock()
 _parsing_queue: queue.Queue[MessageInfo] = queue.Queue()
 _queue: deque[MessageInfo] = deque()
-_condition: Condition = Condition()
 
 def add(message: str, voice: str, timestamp: datetime.datetime = datetime.datetime.now(), censor: bool = False):
     message = message.strip()
     if len(message) == 0 or not config.enabled:
         return
 
-    with _condition:
-        msg_id = uuid.uuid4()
-        msgtoadd = MessageInfo(
-            message = message,
-            timestamp = timestamp.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
-            voice = voice,
-            skip = False,
-            censor = censor,
-            sender = {},
-            id = str(msg_id),
-            parsed_data=None
-        )
+    msg_id = uuid.uuid4()
+    msgtoadd = MessageInfo(
+        message = message,
+        timestamp = timestamp.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+        voice = voice,
+        skip = False,
+        censor = censor,
+        sender = {},
+        id = str(msg_id),
+        parsed_data=None
+    )
 
-        _parsing_queue.put(msgtoadd)
+    _parsing_queue.put(msgtoadd)
 
-        config.Event(
-            "WebsocketEvent",
-            "texttospeech",
-            "textqueued",
-            {
-                "id": msgtoadd.id,
-                "timestamp": msgtoadd.timestamp,
-                "text": message,
-                "duration": 0.0,
-                "engineName": "Speekaboo Piper",
-                "voiceName": config.config["voices"][voice]["model_name"],
-                "pitch":0.0,
-                "volume": 1.0,
-                "rate": 0.0
-            }
-        )
-        _condition.notify_all()
-        return str(msg_id)
+    config.Event(
+        "WebsocketEvent",
+        "texttospeech",
+        "textqueued",
+        {
+            "id": msgtoadd.id,
+            "timestamp": msgtoadd.timestamp,
+            "text": message,
+            "duration": 0.0,
+            "engineName": "Speekaboo Piper",
+            "voiceName": config.config["voices"][voice]["model_name"],
+            "pitch":0.0,
+            "volume": 1.0,
+            "rate": 0.0
+        }
+    )
+    return str(msg_id)
     
 
 def pop() -> MessageInfo|None:
-    with _lock:
-        if len(_queue) > 0:
-            return _queue.popleft()
-        else:
-            return None
+    if len(_queue) > 0:
+        return _queue.popleft()
+    else:
+        return None
 
 def peek(idx: int = 0) -> MessageInfo | None:
-    with _lock:
-        if len(_queue) > idx:
-            return _queue[idx]
-        else:
-            return None
+    if len(_queue) > idx:
+        return _queue[idx]
+    else:
+        return None
 
 def num_items() -> int:
     return len(_queue)
 
 def to_list() -> list[MessageInfo]:
-    with _lock:
-        lst = list(_queue)
-        return lst
+    lst = list(_queue)
+    return lst
 
 
 def toggle_skip(message: MessageInfo):
-    with _lock:
-        try:
-            idx = _queue.index(message)
-            _queue[idx].skip = not _queue[idx].skip
-        except ValueError:
-            pass
+    try:
+        idx = _queue.index(message)
+        _queue[idx].skip = not _queue[idx].skip
+    except ValueError:
+        pass
 
 def clear():
-    with _lock:
-        _queue.clear()
+    _queue.clear()
 
 
 @cachetools.cached(cache=cachetools.LRUCache(maxsize = config.config["max_memory_usage"], getsizeof=lambda x: x[1]))
@@ -297,8 +289,6 @@ class TTSThread(Thread):
         self.running = False
         if not self.is_alive():
             return
-        with _condition:
-            _condition.notify_all()
 
         self.join()
         logging.info("Joined TTS thread")
@@ -306,9 +296,8 @@ class TTSThread(Thread):
     def run(self):
         self.running = True
         while self.running:
-            with _condition:
-                while _parsing_queue.empty() and self.running:
-                    _condition.wait()
+                while _parsing_queue.qsize() == 0 and self.running:
+                    sleep(0.5)
                 if self.running:
                     message = _parsing_queue.get()
 
@@ -317,8 +306,7 @@ class TTSThread(Thread):
                     _parsing_queue.task_done()
                     if message.parsed_data is None:
                         continue
-                    with _lock:
-                        _queue.append(message)
+                    _queue.append(message)
 
         logging.info("Done running TTS thread")
 
