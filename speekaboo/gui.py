@@ -45,7 +45,9 @@ from voice_manager import vm
 import audio
 import tts
 
-
+# Force encoding to UTF-8 to prevent crashes on Windows
+sys.stdout.reconfigure(encoding="utf-8") # type: ignore
+sys.stderr.reconfigure(encoding="utf-8") # type: ignore
 
 class ExceptionHandlingTk(tk.Tk, config.Observer):
     """
