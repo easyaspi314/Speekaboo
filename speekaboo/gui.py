@@ -903,27 +903,40 @@ class SettingsTab(ttk.Frame):
                                 "so Speekaboo will cache the most recently used voices in memory. Note that"
                                 "changing the speaker ID is free.")
 
+        onnx_mem_limit = LabeledWidget(self, "ONNX Memory Limit (MiB)", ttk.Spinbox, from_=128, to=config.system_mem // 4, textvariable=ConfigIntVar(self, key_name="onnx_memory_limit"))
+        onnx_mem_limit.grid(row=row, column=1, padx=5, pady=5, sticky=tk.EW)
+
+        ToolTip(onnx_mem_limit, text="Limits the max memory usage that ONNX can use. 1 GiB is usually a safe option.")
+
+        num_threads = LabeledWidget(self, "CPU Threads (0=auto)", ttk.Spinbox, from_=0, to=config.cpu_count, textvariable=ConfigIntVar(self, key_name="num_threads"))
+        num_threads.grid(row=row, column=2, padx=5, pady=5, sticky=tk.EW)
+
+        ToolTip(num_threads, text="How many CPU threads to use when generating TTS. In practice, there is very little benefit past 6 threads.")
+
         word_limit = LabeledWidget(self, "Word limit (0=off)", ttk.Spinbox, from_=0, to=999, textvariable=ConfigIntVar(self, key_name="max_words"))
-        word_limit.grid(row=row, column=1, sticky=tk.EW)
+        word_limit.grid(row=row, column=3, sticky=tk.EW)
+
+        ToolTip(word_limit, "Prevents playing messages if there are too many words. Set to 0 to disable this limit. Make sure you set an ONNX memory limit.")
 
 
-        # TODO: Add support for other EPs
+        # TODO: CUDA. Memory limit for GPU is complicated and there is very little performance
+        # benefit for short bursts
 
-        cuda_enabled_state = tk.DISABLED
-        if cuda_available.getCudaDeviceCount() == 0:
-            cuda_tooltip = "Currently only supported on NVIDIA GPUs"
-            config.config["use_cuda"] = False
-        elif "CUDAExecutionProvider" not in ort.get_available_providers():
-            cuda_tooltip = "Your GPU seems to be supported, but you need to install the CUDA variant of ONNX:\n    python -m pip install onnxruntime-gpu"
-            config.config["use_cuda"] = False
-        else:
-            cuda_enabled_state = tk.NORMAL
-            cuda_tooltip = "Uses your GPU to process TTS. May be beneficial if you don't have many CPU cores."
+        # cuda_enabled_state = tk.DISABLED
+        # if cuda_available.getCudaDeviceCount() == 0:
+        #     cuda_tooltip = "Currently only supported on NVIDIA GPUs"
+        #     config.config["use_cuda"] = False
+        # elif "CUDAExecutionProvider" not in ort.get_available_providers():
+        #     cuda_tooltip = "Your GPU seems to be supported, but you need to install the CUDA variant of ONNX:\n    python -m pip install onnxruntime-gpu"
+        #     config.config["use_cuda"] = False
+        # else:
+        #     cuda_enabled_state = tk.NORMAL
+        #     cuda_tooltip = "Uses your GPU to process TTS. May be beneficial if you don't have many CPU cores."
 
 
-        cudabox = ttk.Checkbutton(self, text="Use CUDA acceleration", state=cuda_enabled_state, variable=ConfigIntVar(self, key_name="use_cuda"))
-        cudabox.grid(row=row, column=2, columnspan=2, padx=5, pady=5, sticky=tk.W)
-        ToolTip(cudabox, text=cuda_tooltip)
+        # cudabox = ttk.Checkbutton(self, text="Use CUDA acceleration", state=cuda_enabled_state, variable=ConfigIntVar(self, key_name="use_cuda"))
+        # cudabox.grid(row=row, column=2, columnspan=2, padx=5, pady=5, sticky=tk.W)
+        # ToolTip(cudabox, text=cuda_tooltip)
         row += 1
 
         # not implemented yet
@@ -942,7 +955,6 @@ class SettingsTab(ttk.Frame):
         self.device_select.grid(row=row, column=0, columnspan=4, padx=5, pady=5, sticky=tk.NSEW)
 
 
-        ToolTip(word_limit, "Prevents playing messages if there are too many words. Set to 0 to disable this limit.")
 
         for i in range(4):
             self.grid_columnconfigure(i, weight=1, uniform="config")

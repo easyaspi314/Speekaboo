@@ -3,7 +3,7 @@ import logging
 import wave
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union, Generator
 
 import numpy as np
 import onnxruntime
@@ -20,12 +20,16 @@ _LOGGER = logging.getLogger(__name__)
 class PiperVoice:
     session: onnxruntime.InferenceSession
     config: PiperConfig
+    runopts: onnxruntime.RunOptions
+    max_phonemes: int
 
     @staticmethod
     def load(
         model_path: Union[str, Path],
         config_path: Optional[Union[str, Path]] = None,
         use_cuda: bool = False,
+        num_threads: int = 0,
+        max_phonemes: int = 200
     ) -> "PiperVoice":
         """Load an ONNX model and config."""
         if config_path is None:
@@ -45,14 +49,30 @@ class PiperVoice:
         else:
             providers = ["CPUExecutionProvider"]
 
+        options = onnxruntime.SessionOptions()
+        # thread limit
+        if num_threads > 0:
+            options.intra_op_num_threads = num_threads
+
+        # Denial of service prevention: Make sure ONNX has a hard memory limit, and that
+        # it releases memory immediately.
+        options.add_session_config_entry("session.use_env_allocators", "1")
+        options.enable_cpu_mem_arena = False
+
+        runopts = onnxruntime.RunOptions()
+        # Forcibly enable memory shrinkage so ONNX doesn't leak memory
+        runopts.add_run_config_entry("memory.enable_memory_arena_shrinkage", "cpu:0")
         return PiperVoice(
             config=PiperConfig.from_dict(config_dict),
             session=onnxruntime.InferenceSession(
                 str(model_path),
-                sess_options=onnxruntime.SessionOptions(),
+                sess_options=options,
                 providers=providers,
             ),
+            runopts=runopts,
+            max_phonemes=max_phonemes,
         )
+
 
     def phonemize(self, text: str) -> List[List[str]]:
         """Text to phonemes grouped by sentence."""
@@ -85,6 +105,62 @@ class PiperVoice:
         ids.extend(id_map[EOS])
 
         return ids
+
+    def split_at_commas(self, text: List[str]) -> Generator[List[str], Any, None]:
+        """
+        Denial of service prevention: Split up the phonemes if the sentence is too long to avoid
+        giving ONNX too many tokens at once.
+
+        Hacky Logic:
+          - Loop over the sentence, tracking spaces and commas
+          - When we get to a multiple of self.max_phonemes, try to split at the nearest comma
+          - If we get to 2x the max phonemes since the last comma, split at the nearest space
+          - If we get to 2x the max phonemes since the last space, hard split.
+        """
+        last_start = 0
+        last_comma = 0
+        last_space = 0
+        _LOGGER.warning("Splitting up long sentence")
+        for i, phoneme in enumerate(text):
+            # commas are ,<space>
+            if phoneme == ',':
+                last_comma = i
+            # second worst case: find the closest space to halfway
+            elif phoneme == ' ' and (i - last_start) < self.max_phonemes:
+                last_space = i
+
+            if i % self.max_phonemes == 0 and last_comma != last_start and last_comma + 1 < len(text):
+                yield text[last_start:last_comma]
+                last_start = last_space = last_comma + 2
+            elif i - last_comma > self.max_phonemes * 2 and last_space > last_comma:
+                _LOGGER.warning("breaking at space")
+                yield text[last_start:last_space]
+                last_start = last_comma = last_space
+            elif i - last_space > self.max_phonemes * 2:
+                _LOGGER.warning("forcing break!")
+                yield text[last_start:i]
+                last_start = last_comma = last_space = i
+
+        yield text[last_start:]
+
+
+    def phonemize_with_limit(self, text: str) -> List[Tuple[List[str], bool]]:
+        """
+        Like phonemize_impl, but splits up long sentences. Long sentences can consume
+        gigabytes of RAM when inferencing.
+        """
+        phonemes = self.phonemize(text)
+        out: List[Tuple[List[str], bool]] = []
+        for sentence in phonemes:
+            if len(sentence) > self.max_phonemes:
+                for fragment in self.split_at_commas(sentence):
+                    if fragment:
+                        out.append((fragment, False))
+                out.append(([], True))
+            else:
+                out.append((sentence, True))
+        return out
+
 
     def synthesize(
         self,
@@ -121,21 +197,30 @@ class PiperVoice:
         sentence_silence: float = 0.0,
     ) -> Iterable[bytes]:
         """Synthesize raw audio per sentence from text."""
-        sentence_phonemes = self.phonemize(text)
+        sentence_phonemes = self.phonemize_with_limit(text)
 
         # 16-bit mono
         num_silence_samples = int(sentence_silence * self.config.sample_rate)
-        silence_bytes = bytes(num_silence_samples * 2)
+        silence_bytes = np.zeros(num_silence_samples * 2, dtype=np.float32)
+    
+        for phonemes, pause in sentence_phonemes:
+            if len(phonemes) == 0:
+                if pause and len(silence_bytes):
+                    yield silence_bytes
+                continue
 
-        for phonemes in sentence_phonemes:
             phoneme_ids = self.phonemes_to_ids(phonemes)
-            yield self.synthesize_ids_to_raw(
+            synthesized = self.synthesize_ids_to_raw(
                 phoneme_ids,
                 speaker_id=speaker_id,
                 length_scale=length_scale,
                 noise_scale=noise_scale,
                 noise_w=noise_w,
-            ) + silence_bytes
+            )
+            if pause:
+                synthesized = np.append(synthesized, silence_bytes)
+
+            yield synthesized
 
     def synthesize_ids_to_raw(
         self,
@@ -180,6 +265,6 @@ class PiperVoice:
             args["sid"] = sid
 
         # Synthesize through Onnx
-        audio = self.session.run(None, args, )[0].squeeze((0, 1))
+        audio = self.session.run(None, args, self.runopts)[0].squeeze((0, 1))
         audio = audio_float_to_int16(audio.squeeze())
         return audio.tobytes()

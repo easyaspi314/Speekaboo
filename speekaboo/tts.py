@@ -32,6 +32,7 @@ import json
 import math
 
 import numpy as np
+import onnxruntime as ort
 import cachetools
 from piper import PiperVoice
 from piper.util import audio_float_to_int16
@@ -126,6 +127,17 @@ def toggle_skip(message: MessageInfo):
 def clear():
     _queue.clear()
 
+def set_onnx_limit(size: int):
+    """ Set a limit for ONNX because if unchecked, ONNX _will_ use all your RAM """
+    ort_arena_config = ort.OrtArenaCfg(size, -1, -1, -1)
+    ort_memory_info = ort.OrtMemoryInfo(
+        "Cpu",
+        ort.OrtAllocatorType.ORT_ARENA_ALLOCATOR,
+        0,
+        ort.OrtMemType.DEFAULT
+    )
+    ort.create_and_register_allocator(ort_memory_info, ort_arena_config)
+
 
 @cachetools.cached(cache=cachetools.LRUCache(maxsize = config.config["max_memory_usage"], getsizeof=lambda x: x[1]))
 def get_voice_impl(voicepath: Path) -> tuple[PiperVoice, float]: # model, memory usage
@@ -146,12 +158,7 @@ def get_voice_impl(voicepath: Path) -> tuple[PiperVoice, float]: # model, memory
     # estimate memory usage, since python doesn't manage the memory
     start_memory_usage = proc.memory_info().rss
 
-    try:
-        voice = PiperVoice.load(voicepath, use_cuda=config.config["use_cuda"])
-    except Exception as e: # pylint:disable=broad-exception-caught
-        logging.error("Error initializing acceleration, using CPU instead", exc_info=e)
-        config.config["use_cuda"] = False
-        voice = PiperVoice.load(voicepath, use_cuda=False)
+    voice = PiperVoice.load(voicepath, use_cuda=config.config["use_cuda"], num_threads=config.config["num_threads"])
 
     end_memory_usage = proc.memory_info().rss
     diff_in_mb = (end_memory_usage - start_memory_usage) / (1024.0 * 1024.0)
@@ -295,18 +302,20 @@ class TTSThread(Thread):
 
     def run(self):
         self.running = True
-        while self.running:
-                while _parsing_queue.qsize() == 0 and self.running:
-                    sleep(0.5)
-                if self.running:
-                    message = _parsing_queue.get()
+        set_onnx_limit(config.config.get("onnx_memory_limit", 1024) * 1024 * 1024)
 
-                    message.parsed_data = self.parse_tts(message)
-                    
-                    _parsing_queue.task_done()
-                    if message.parsed_data is None:
-                        continue
-                    _queue.append(message)
+        while self.running:
+            while _parsing_queue.qsize() == 0 and self.running:
+                sleep(0.5)
+            if self.running:
+                message = _parsing_queue.get()
+
+                message.parsed_data = self.parse_tts(message)
+                
+                _parsing_queue.task_done()
+                if message.parsed_data is None:
+                    continue
+                _queue.append(message)
 
         logging.info("Done running TTS thread")
 

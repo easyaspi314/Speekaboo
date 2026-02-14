@@ -102,6 +102,7 @@ default_piper_options = {
 }
 
 system_mem = psutil.virtual_memory().total // (1024 * 1024) # in MiB
+cpu_count = psutil.cpu_count(logical=False) or 1
 
 config_folder = try_create_folder(dirinfo.user_config_dir)
 data_folder = try_create_folder(Path(dirinfo.user_data_dir) / "voicedata")
@@ -114,6 +115,11 @@ def load_config():
     - ~/.config/Speekaboo/Speekaboo.json
     - ~/Library/Application Support/Speekaboo/Speekaboo.json
     """
+
+    # Either half your physical cores (e.g. 2 threads on a 4c8t CPU) or 6 threads
+    # There is no major benefit over 6 threads.
+    preferred_threads = min(max(cpu_count // 2, 1), 6)
+
     default_config = {
         "ws_server_enabled": True,                        # Whether to enable the Websocket server
         "ws_server_addr": "127.0.0.1",                    # Address of the Websocket server
@@ -127,13 +133,15 @@ def load_config():
 
         },
         "additional_voices": {},                          # Map of additional voices {"voice_name": "path/to/file.onnx"}
-        "use_cuda": False,                                # Whether to use Cuda
+        "use_cuda": False,                                # Whether to use Cuda (currently disabled)
         "output_device": None,                            # Audio output device (null = default)
         "volume": 1.0,                                    # Output volume
         "queue_delay": 0.0,                               # Delay before playing voices (to allow time for moderation)
         "max_words": 25,                                  # Maximum number of words
-        "max_memory_usage": min(512, system_mem // 32),   # How much memory in MIB we use before purging old voices. Default to 512 MiB or 1/32 system memory.
-        "text_replacement": "filtered"                    # neuro-sama reference :)
+        "max_memory_usage": min(512, system_mem // 32),   # Cache size. Default to 512 MiB or 1/32 system memory.
+        "text_replacement": "filtered",                   # neuro-sama reference :)
+        "num_threads": preferred_threads,                 # Number of threads for CPU inference
+        "onnx_memory_limit": 1024,                        # Memory limit for ONNX
     }
     config_file_path = None
 
