@@ -41,8 +41,6 @@ from miniaudio import convert_frames, SampleFormat
 
 import config
 from voice_manager import vm
-from audio import audio
-
 @dataclass
 class MessageInfo:
     message: str                # Message
@@ -53,6 +51,7 @@ class MessageInfo:
     sender: dict                # for future additions
     id: str                     # Unique UUID
     parsed_data: bytearray|None # Parsed TTS data
+    duration: float             # 
     def __str__(self):
         return json.dumps(self)
 
@@ -73,7 +72,8 @@ def add(message: str, voice: str, timestamp: datetime.datetime = datetime.dateti
         censor = censor,
         sender = {},
         id = str(msg_id),
-        parsed_data=None
+        parsed_data=None,
+        duration=0.0
     )
 
     _parsing_queue.put(msgtoadd)
@@ -185,6 +185,8 @@ class TTSThread(Thread):
 
     def parse_tts(self, message: MessageInfo):
 
+        from audio import audio
+
         try:
             if message.voice not in config.config["voices"]:
                 raise ValueError(f"Invalid voice {message.voice}")
@@ -249,7 +251,7 @@ class TTSThread(Thread):
                                        to_samplerate=audio.get_sample_rate())
 
             # Get the duration in milliseconds
-            duration = round(len(converted) / 2 / audio.get_sample_rate() * 1000, 2)
+            message.duration = round(len(converted) / 2 / audio.get_sample_rate() * 1000, 2)
 
             # Emit an event to signal that we processed it
             config.Event(
@@ -260,7 +262,7 @@ class TTSThread(Thread):
                     "id": message.id,
                     "timestamp": message.timestamp,
                     "text": message.message,
-                    "duration": duration,
+                    "duration": message.duration,
                     "engineName": "Speekaboo Piper",
                     "voiceName": voice_info["model_name"],
                     "pitch":0.0,

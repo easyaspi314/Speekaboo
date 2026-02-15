@@ -18,6 +18,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+import os
+import sys
 import time
 import threading
 import logging
@@ -50,7 +52,6 @@ class AudioThread(threading.Thread):
         self.device = None
         self.playback_devices = None
 
-
     def initialize(self):
 
         if self.device is not None:
@@ -59,7 +60,13 @@ class AudioThread(threading.Thread):
             self.device = None
 
         self.get_devices()
-        assert self.playback_devices is not None
+        if not self.playback_devices:
+            config.Event(
+                "WebsocketEvent",
+                "internal_event",
+                "error",
+                { "message": "Unable to find any audio devices" }
+            )
 
         wanted_device = config.config["output_device"]
 
@@ -68,6 +75,12 @@ class AudioThread(threading.Thread):
         else:
             if wanted_device is not None:
                 logging.warning("Selected audio device %s not found. Choosing the default.", wanted_device)
+                config.Event(
+                    "WebsocketEvent",
+                    "internal_event",
+                    "error",
+                    { "message": f"{wanted_device} not found, selecting default audio device." }
+                )
             output_device = None
         try:
             self.device = miniaudio.PlaybackDevice(
@@ -77,7 +90,13 @@ class AudioThread(threading.Thread):
                 device_id=output_device
             )
         except miniaudio.MiniaudioError as e:
-            config.Event("raise_error", f"MiniAudio error: {e.args[0]}", e)
+            config.Event(
+                "WebsocketEvent",
+                "internal_event",
+                "error",
+                { "message": f"Audio error: {e.args[0]}" }
+            )
+            # config.Event("raise_error", f"MiniAudio error: {e.args[0]}{extra}", e)
 
 
 
@@ -85,24 +104,24 @@ class AudioThread(threading.Thread):
         """
         Gets a list of devices in a more friendly format than miniaudio:
         """
-        if self.playback_devices is None:
-            try:
-                devices = miniaudio.Devices()
-                self.playback_devices = {}
-                playbacks = devices.get_playbacks()
-                for d in enumerate(playbacks, 1):
-                    if d[1]["name"] in self.playback_devices:
-                        logging.warning("warning: %s duplicated", d[1]["name"])
-                    self.playback_devices[d[1]["name"]] = (d[0], d[1])
-            except miniaudio.MiniaudioError as e:
-                logging.error("Error getting audio devices.", exc_info=e)
-                self.playback_devices = {}
+
+        try:
+            devices = miniaudio.Devices()
+            self.playback_devices = {}
+            playbacks = devices.get_playbacks()
+            for d in enumerate(playbacks, 1):
+                if d[1]["name"] in self.playback_devices:
+                    logging.warning("warning: %s duplicated", d[1]["name"])
+                self.playback_devices[d[1]["name"]] = (d[0], d[1])
+        except miniaudio.MiniaudioError as e:
+            logging.error("Error getting audio devices.", exc_info=e)
+            self.playback_devices = None
 
         return self.playback_devices
 
     def get_sample_rate(self):
         if self.device is None:
-            return -1
+            return 22050
         return self.device.sample_rate
 
     def stream_pcm(self, source):
@@ -137,13 +156,33 @@ class AudioThread(threading.Thread):
             self.playing = False
             self.condition.notify_all()
 
+    def play_message(self, message: tts.MessageInfo):
+        # https://github.com/irmen/pyminiaudio/blob/master/examples/playcallbacks.py
+        start_time = time.time()
+        stream = self.stream_pcm(message.parsed_data)
+        next(stream)
+        callbacks_stream = miniaudio.stream_with_callbacks(stream, end_callback=self.stream_end_callback)
+        next(callbacks_stream)
+        self.playing = True
+        self.device.start(callbacks_stream)
+
+        # Wait for playback to finish
+        with self.condition:
+            while self.playing and self.running:
+                # When devices are timed out, kill it and try again. It's possible that 
+                elapsed = time.time() - start_time
+                if elapsed > 2 + (message.duration / 1000):
+                    raise TimeoutError("Audio driver timed out!")
+                self.condition.wait(0.5)
+
+
     def run(self):
         """
         Audio thread entrypoint
 
         TODO: this needs some massive cleanup.
         """
-        assert self.device is not None
+
 
         self.running = True
         while self.running:
@@ -159,7 +198,23 @@ class AudioThread(threading.Thread):
                     break
 
                 tts.pop()
+                if self.device is None:
+                    config.Event(
+                        "WebsocketEvent",
+                        "texttospeech", "error", {
+                        "id": message.id,
+                        "timestamp": message.timestamp,
+                        "text": message.message,
+                        "voiceName": config.config["voices"][message.voice].get("model_name", ""), 
+                        "voiceEngine": "Speekaboo Piper",
+                        "duration": 0.0,
+                        "speekaboo_exception": "No audio devices",
+                        "volume": 1.0,
+                        "rate": 0.0
+                    })
+                    continue
 
+                
                 config.Event(
                     "WebsocketEvent",
                     "texttospeech", "playing", {
@@ -168,24 +223,41 @@ class AudioThread(threading.Thread):
                     "text": message.message,
                     "voiceName": config.config["voices"][message.voice].get("model_name", ""), 
                     "voiceEngine": "Speekaboo Piper",
-                    "duration": len(message.parsed_data) / self.get_sample_rate() / 2 * 1000,
+                    "duration": message.duration,
                     "volume": 1.0,
                     "rate": 0.0
                 })
-                # https://github.com/irmen/pyminiaudio/blob/master/examples/playcallbacks.py
-                stream = self.stream_pcm(message.parsed_data)
-                next(stream)
-                callbacks_stream = miniaudio.stream_with_callbacks(stream, end_callback=self.stream_end_callback)
-                next(callbacks_stream)
-                self.playing = True
-                self.device.start(callbacks_stream)
+                try:
+                    self.play_message(message)
+                except Exception:
+                    config.Event(
+                        "WebsocketEvent",
+                        "internal_event",
+                        "error",
+                        { "message": "Error playing audio, trying again..." }
+                    )
+                    self.initialize()
 
-                # Wait for playback to finish
-                with self.condition:
-                    while self.playing and self.running:
-                        print("Playing")
-                        self.condition.wait()
-                
+                    # try again
+                    try:
+                        self.play_message(message)
+                    except Exception as e2:
+                        config.Event(
+                            "WebsocketEvent",
+                            "texttospeech", "error", {
+                            "id": message.id,
+                            "timestamp": message.timestamp,
+                            "text": message.message,
+                            "voiceName": config.config["voices"][message.voice].get("model_name", ""), 
+                            "voiceEngine": "Speekaboo Piper",
+                            "duration": 0.0,
+                            "speekaboo_exception": e2.args[0],
+                            "volume": 1.0,
+                            "rate": 0.0
+                        })
+                        continue
+
+
                 config.Event(
                     "WebsocketEvent",
                     "texttospeech",
@@ -195,7 +267,7 @@ class AudioThread(threading.Thread):
                     "text": message.message,
                     "voiceName": config.config["voices"][message.voice].get("model_name", ""), 
                     "voiceEngine": "Speekaboo Piper",
-                    "duration": len(message.parsed_data) / self.get_sample_rate() / 2 * 1000,
+                    "duration": message.duration,
                     "volume": config.config["voices"][message.voice].get("volume", 1.0),
                     "rate": 0.0
                 })

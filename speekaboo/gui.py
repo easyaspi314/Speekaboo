@@ -281,7 +281,7 @@ class MainTab(ttk.Frame, config.Observer):
         self.queue_box.yview_moveto(0.0)
 
     def handle_event(self, event_source: str, event_type: str = '', data: dict|None = None):
-        print(event_source, event_type, data)
+        # print(event_source, event_type, data)
         if window is None or data is None:
             logging.info("Event on dead instance")
             return
@@ -305,10 +305,12 @@ class MainTab(ttk.Frame, config.Observer):
                     self.write_to_log(f"Processed: {data['text']}")
                 case "playing":
                     self.write_to_log(f"Playing: {data['text']}")
-                    self.queue_box.delete(data["id"])
+                    if self.queue_box.exists(data["id"]):
+                        self.queue_box.delete(data["id"])
                 case "error":
                     self.write_to_log(f"Error: {data['text']}: {data.get('speekaboo_exception', 'Unknown')}")
-                    self.queue_box.delete(data["id"])
+                    if self.queue_box.exists(data["id"]):
+                        self.queue_box.delete(data["id"])
 
 
 
