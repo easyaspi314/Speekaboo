@@ -36,6 +36,7 @@ import json
 
 from piper import download as PiperDownloader
 
+import event
 import config
 class VoiceManager:
     def __init__(self):
@@ -114,11 +115,11 @@ class VoiceManager:
         try:
             PiperDownloader.ensure_voice_exists(voice, [config.data_folder], config.data_folder, self.voices)
             result = True
-            config.Event("voices_changed", voice, True)
+            event.voices_changed(voice, True)
             logging.info("Done downloading %s with result %s", voice, result)
         except Exception as e: # pylint: disable=broad-except
             logging.error("Failed to download %s!", exc_info=e)
-            config.Event("voices_changed", voice, False)
+            event.voices_changed(voice, False)
             result = False
 
     def install_voice(self, voice: str) -> None:
@@ -186,7 +187,7 @@ class VoiceManager:
             onnx_path, config_path = PiperDownloader.find_voice(voice, [config.data_folder])
             Path(onnx_path).unlink()
             Path(config_path).unlink()
-            config.Event("voices_changed", voice, False)
+            event.voices_changed(voice, False)
         except IOError as e:
             logging.info("error", exc_info=e)
             pass
@@ -195,7 +196,7 @@ class VoiceManager:
         if Path(voice_path).exists() and Path(voice_path + ".json").exists():
             voice = Path(voice_path).stem
             config.config["additional_voices"][voice] = voice_path
-            config.Event("voices_changed", voice, True)
+            event.voices_changed(voice, True)
 
         else:
             raise ValueError("Could not find config file {}".format(voice_path))
@@ -203,7 +204,7 @@ class VoiceManager:
     def deregister_voice(self, voice: str):
         if voice in config.config["additional_voices"]:
             del config.config["additional_voices"][voice]
-            config.Event("voices_changed", voice, False)
+            event.voices_changed(voice, False)
 
     def get_used_aliases(self, voice: str) -> list[str]:
         used_aliases: list[str] = []

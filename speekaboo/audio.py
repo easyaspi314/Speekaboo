@@ -29,6 +29,7 @@ import miniaudio
 
 import config
 import tts
+import event
 
 class AudioThread(threading.Thread):
     """
@@ -61,12 +62,7 @@ class AudioThread(threading.Thread):
 
         self.get_devices()
         if not self.playback_devices:
-            config.Event(
-                "WebsocketEvent",
-                "internal_event",
-                "error",
-                { "message": "Unable to find any audio devices" }
-            )
+            event.warn("Unable to find any audio devices")
 
         wanted_device = config.config["output_device"]
 
@@ -74,13 +70,7 @@ class AudioThread(threading.Thread):
             output_device = self.playback_devices[wanted_device][1]["id"]
         else:
             if wanted_device is not None:
-                logging.warning("Selected audio device %s not found. Choosing the default.", wanted_device)
-                config.Event(
-                    "WebsocketEvent",
-                    "internal_event",
-                    "error",
-                    { "message": f"{wanted_device} not found, selecting default audio device." }
-                )
+                event.warn(f"Selected audio device {wanted_device} not found, selecting default.")
             output_device = None
         try:
             self.device = miniaudio.PlaybackDevice(
@@ -90,14 +80,7 @@ class AudioThread(threading.Thread):
                 device_id=output_device
             )
         except miniaudio.MiniaudioError as e:
-            config.Event(
-                "WebsocketEvent",
-                "internal_event",
-                "error",
-                { "message": f"Audio error: {e.args[0]}" }
-            )
-            # config.Event("raise_error", f"MiniAudio error: {e.args[0]}{extra}", e)
-
+            event.warn(f"Audio error: {e.args[0]}")
 
 
     def get_devices(self) -> dict:
@@ -199,78 +182,25 @@ class AudioThread(threading.Thread):
 
                 tts.pop()
                 if self.device is None:
-                    config.Event(
-                        "WebsocketEvent",
-                        "texttospeech", "error", {
-                        "id": message.id,
-                        "timestamp": message.timestamp,
-                        "text": message.message,
-                        "voiceName": config.config["voices"][message.voice].get("model_name", ""), 
-                        "voiceEngine": "Speekaboo Piper",
-                        "duration": 0.0,
-                        "speekaboo_exception": "No audio devices",
-                        "volume": 1.0,
-                        "rate": 0.0
-                    })
+                    message.tts_event(error, "No audio devices")
                     continue
 
                 
-                config.Event(
-                    "WebsocketEvent",
-                    "texttospeech", "playing", {
-                    "id": message.id,
-                    "timestamp": message.timestamp,
-                    "text": message.message,
-                    "voiceName": config.config["voices"][message.voice].get("model_name", ""), 
-                    "voiceEngine": "Speekaboo Piper",
-                    "duration": message.duration,
-                    "volume": 1.0,
-                    "rate": 0.0
-                })
+                message.tts_event("playing")
                 try:
                     self.play_message(message)
                 except Exception:
-                    config.Event(
-                        "WebsocketEvent",
-                        "internal_event",
-                        "error",
-                        { "message": "Error playing audio, trying again..." }
-                    )
+                    event.warn("Error playing audio, trying again...")
                     self.initialize()
 
                     # try again
                     try:
                         self.play_message(message)
                     except Exception as e2:
-                        config.Event(
-                            "WebsocketEvent",
-                            "texttospeech", "error", {
-                            "id": message.id,
-                            "timestamp": message.timestamp,
-                            "text": message.message,
-                            "voiceName": config.config["voices"][message.voice].get("model_name", ""), 
-                            "voiceEngine": "Speekaboo Piper",
-                            "duration": 0.0,
-                            "speekaboo_exception": e2.args[0],
-                            "volume": 1.0,
-                            "rate": 0.0
-                        })
+                        message.tts_event("error", e2.args[0])
                         continue
 
-
-                config.Event(
-                    "WebsocketEvent",
-                    "texttospeech",
-                    "finished", {
-                    "id": message.id,
-                    "timestamp": message.timestamp,
-                    "text": message.message,
-                    "voiceName": config.config["voices"][message.voice].get("model_name", ""), 
-                    "voiceEngine": "Speekaboo Piper",
-                    "duration": message.duration,
-                    "volume": config.config["voices"][message.voice].get("volume", 1.0),
-                    "rate": 0.0
-                })
+                message.tts_event("finished")
 
         logging.info("Closing audio thread")
 

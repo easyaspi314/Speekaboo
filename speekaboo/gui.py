@@ -38,6 +38,7 @@ import cuda_available
 import onnxruntime as ort
 
 import config
+import event
 
 
 from server import ws_thread, udp_thread
@@ -49,7 +50,7 @@ import tts
 sys.stdout.reconfigure(encoding="utf-8") # type: ignore
 sys.stderr.reconfigure(encoding="utf-8") # type: ignore
 
-class ExceptionHandlingTk(tk.Tk, config.Observer):
+class ExceptionHandlingTk(tk.Tk, event.Observer):
     """
     Tk root window, but with an active exception handler instead of just freezing.
     """
@@ -63,7 +64,7 @@ class ExceptionHandlingTk(tk.Tk, config.Observer):
     def __init__(self, *args, **kwargs):
         tk.Tk.__init__(self, *args, **kwargs)
 
-        config.Observer.__init__(self)
+        event.Observer.__init__(self)
         self.observe("raise_error", self.raise_error)
 
 
@@ -133,7 +134,7 @@ def do_close():
     sys.exit(0)
 
 
-class MainTab(ttk.Frame, config.Observer):
+class MainTab(ttk.Frame, event.Observer):
     """
     Main tab
     
@@ -144,7 +145,7 @@ class MainTab(ttk.Frame, config.Observer):
     """
     def __init__(self, parent, *args, **kwargs):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
-        config.Observer.__init__(self)
+        event.Observer.__init__(self)
         self.observe("WebsocketEvent", self.handle_event)
         self.observe("aliases_list_updated", self.update_alias)
         row = 0
@@ -292,8 +293,8 @@ class MainTab(ttk.Frame, config.Observer):
                     self.write_to_log(f"Loading voice: {data['voice']}")
                 case "loaded_voice":
                     self.write_to_log(f"Loaded voice {data['voice']}, Estimated memory usage: {data['mem']:.1f} MiB")
-                case "error":
-                    self.write_to_log(f"Error: {data['message']}")
+                case "warn":
+                    self.write_to_log(f"EWarning: {data['message']}")
                 case "info":
                     self.write_to_log(f"Info: {data['message']}")
         else:
@@ -329,13 +330,13 @@ class VoiceAliasesTab(ttk.Frame):
     |---------'------------------------------------|
 
     """
-    class VoiceConfigFrame(ttk.Frame, config.Observer):
+    class VoiceConfigFrame(ttk.Frame, event.Observer):
         """
         Frame for voice options
         """
         def __init__(self, parent, *args, **kwargs):
             ttk.Frame.__init__(self, parent, *args, **kwargs)
-            config.Observer.__init__(self)
+            event.Observer.__init__(self)
             self.observe("voices_changed", self.update_voices)
 
             self.voice_config= {}
@@ -502,7 +503,7 @@ class VoiceAliasesTab(ttk.Frame):
         self.aliases.insert("", tk.END, iid=newname, text=newname)
         self.aliases.selection_set([newname])
 
-        config.Event("aliases_list_updated")
+        event.Event("aliases_list_updated")
 
     def remove_alias_callback(self):
         """
@@ -524,7 +525,7 @@ class VoiceAliasesTab(ttk.Frame):
         del config.config["voices"][alias]
 
         self.aliases.delete(alias)
-        config.Event("aliases_list_updated")
+        event.Event("aliases_list_updated")
         self.placeholder.tkraise()
 
     def rename_alias_callback(self):
@@ -565,7 +566,7 @@ class VoiceAliasesTab(ttk.Frame):
         
         self.aliases.insert("", idx, iid=result, text=result)
         self.frame.load_voice(result)
-        config.Event("aliases_list_updated")
+        event.Event("aliases_list_updated")
         
     def select_voice_callback(self, _event):
         for selection in self.aliases.selection():
@@ -624,7 +625,7 @@ class VoiceAliasesTab(ttk.Frame):
 
 notebook.add(VoiceAliasesTab(window), text="Voice Aliases")
 
-class DownloadVoicesTab(ttk.Frame, config.Observer):
+class DownloadVoicesTab(ttk.Frame, event.Observer):
     """
     Download Voices tab
 
@@ -741,7 +742,7 @@ class DownloadVoicesTab(ttk.Frame, config.Observer):
 
     def __init__(self, parent, *args, **kwargs):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
-        config.Observer.__init__(self)
+        event.Observer.__init__(self)
 
         self.observe("voices_changed", self.set_installed)
         treeview_container = ttk.Frame(self)

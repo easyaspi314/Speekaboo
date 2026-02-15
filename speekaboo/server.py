@@ -32,6 +32,7 @@ from websockets.sync.server import serve, ServerConnection
 import config
 import tts
 import audio
+import event
 
 # e.g. 2025-01-28T19:16:09.449827-05:00
 def get_isoformat(time: datetime.datetime = datetime.datetime.now()):
@@ -315,18 +316,13 @@ class SpeekabooHandler:
         message = err.strerror
         match err.errno:
             case errno.EADDRINUSE:
-                message = "Address in use. Is there another instance running?"
+                message = "Address {protocol}://{addr}:{port} in use. Is there another instance running?"
             case errno.EADDRNOTAVAIL:
                 message = f"Address {protocol}://{addr}:{port} is unavailable. Check your firewall."
             case -2 | -3:
                 message = f"Address {protocol}://{addr}:{port} is invalid."
 
-        config.Event(
-            "WebsocketEvent",
-            "internal_event",
-            "error",
-            { "message": message }
-        )
+        event.warn(message)
 
 
 @dataclass
@@ -337,7 +333,7 @@ class ConnectionInfo:
     websocket: ServerConnection
     subscribed_events: dict
 
-class WSServer(Thread, SpeekabooHandler, config.Observer):
+class WSServer(Thread, SpeekabooHandler, event.Observer):
     """
     Websocket server thread handling Speaker.bot requests.
     """
@@ -460,7 +456,7 @@ class WSServer(Thread, SpeekabooHandler, config.Observer):
 
     def handle_event(self, event_source: str, event_type: str, data: dict):
         """
-        Handles a subscribable event, triggered by a config.Event
+        Handles a subscribable event, triggered by a event.Event
         
         Format:
         {
@@ -587,7 +583,7 @@ class WSServer(Thread, SpeekabooHandler, config.Observer):
         Constructor
         """
         Thread.__init__(self, name="Websocket Server Thread")
-        config.Observer.__init__(self)
+        event.Observer.__init__(self)
         self.observe('WebsocketEvent', self.handle_event)
         self.addr = ws_addr
         self.port = ws_port
@@ -605,16 +601,9 @@ class WSServer(Thread, SpeekabooHandler, config.Observer):
         if config.config["ws_server_enabled"]:
             try:
                 with serve(self.handle_websocket, self.addr, self.port) as self.server:
-                    logging.info("Running Websocket server at ws://%s:%d", self.addr, self.port)
-                    config.Event(
-                        "WebsocketEvent",
-                        "internal_event",
-                        "info",
-                        { "message": f"Running WebSocket server at ws://{self.addr}:{self.port}."}
-                    )
+                    event.info(f"Running WebSocket server at ws://{self.addr}:{self.port}.")
                     self.server.serve_forever()
             except OSError as err:
-                logging.error("Error running Websocket server on ws://%s:%d: %s", self.addr, self.port, err)
                 self.log_server_error(err, "ws", self.addr, self.port)
 
                 self.server = None
@@ -697,17 +686,10 @@ class UDPServer(Thread, SpeekabooHandler):
         if config.config["udp_server_enabled"]:
             try:
                 with socketserver.UDPServer((self.addr, self.port), UDPServer.UDPHandler) as self.server: # type: ignore
-                    logging.info("Running UDP server at udp://%s:%d", self.addr, self.port)
-                    config.Event(
-                        "WebsocketEvent",
-                        "internal_event",
-                        "info",
-                        { "message": f"Running UDP server at udp://{self.addr}:{self.port}."}
-                    )
+                    event.info(f"Running UDP server at udp://{self.addr}:{self.port}.")
                     self.server.serve_forever()
 
             except OSError as err:
-                logging.error("Error running UDP server on udp://%s:%d: %s. Is there another instance running?", self.addr, self.port, err)
                 self.log_server_error(err, "udp", self.addr, self.port)
 
                 self.server = None

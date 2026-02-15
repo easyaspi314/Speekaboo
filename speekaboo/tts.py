@@ -40,7 +40,10 @@ import psutil
 from miniaudio import convert_frames, SampleFormat
 
 import config
+import event
+
 from voice_manager import vm
+
 @dataclass
 class MessageInfo:
     message: str                # Message
@@ -54,6 +57,30 @@ class MessageInfo:
     duration: float             # 
     def __str__(self):
         return json.dumps(self)
+
+    def tts_event(self, event_type: str, speekaboo_exception: str|None = None):
+        """
+        Sends a WebsocketEvent with the MessageInfo filled in.
+        """
+        payload = {
+            "id": self.id,
+            "timestamp": self.timestamp,
+            "text": self.message,
+            "duration": self.duration or 0.0,
+            "engineName": "Speekaboo Piper",
+            "voiceName": config.config["voices"][self.voice]["model_name"],
+            "pitch":0.0,
+            "volume": 1.0,
+            "rate": 0.0
+        }
+        if speekaboo_exception is not None:
+            payload["speekaboo_exception"] = speekaboo_exception
+
+        event.ws_event(
+            "texttospeech",
+            event_type,
+            payload
+        )
 
 _parsing_queue: queue.Queue[MessageInfo] = queue.Queue()
 _queue: deque[MessageInfo] = deque()
@@ -78,22 +105,8 @@ def add(message: str, voice: str, timestamp: datetime.datetime = datetime.dateti
 
     _parsing_queue.put(msgtoadd)
 
-    config.Event(
-        "WebsocketEvent",
-        "texttospeech",
-        "textqueued",
-        {
-            "id": msgtoadd.id,
-            "timestamp": msgtoadd.timestamp,
-            "text": message,
-            "duration": 0.0,
-            "engineName": "Speekaboo Piper",
-            "voiceName": config.config["voices"][voice]["model_name"],
-            "pitch":0.0,
-            "volume": 1.0,
-            "rate": 0.0
-        }
-    )
+    msgtoadd.tts_event("textqueued")
+ 
     return str(msg_id)
     
 
@@ -146,14 +159,8 @@ def get_voice_impl(voicepath: Path) -> tuple[PiperVoice, float]: # model, memory
     we use cachetools to make a least 
     """
     logging.info("Loading voice %s", voicepath.stem)
-    config.Event(
-        "WebsocketEvent",
-        "internal_event",
-        "loading_voice",
-        {
-            "voice": voicepath.stem
-        }
-    )
+
+    event.loading_voice(voicepath.stem)
     proc = psutil.Process()
     # estimate memory usage, since python doesn't manage the memory
     start_memory_usage = proc.memory_info().rss
@@ -163,15 +170,8 @@ def get_voice_impl(voicepath: Path) -> tuple[PiperVoice, float]: # model, memory
     end_memory_usage = proc.memory_info().rss
     diff_in_mb = (end_memory_usage - start_memory_usage) / (1024.0 * 1024.0)
     logging.info("Estimated memory usage: %.2f MiB", diff_in_mb)
-    config.Event(
-        "WebsocketEvent",
-        "internal_event",
-        "loaded_voice",
-        {
-            "voice": voicepath.stem,
-            "mem": diff_in_mb
-        }
-    )
+
+    event.loaded_voice(voicepath.stem, diff_in_mb)
     return (voice, diff_in_mb)
 
 def get_voice(voicepath: Path) -> PiperVoice:
@@ -254,43 +254,14 @@ class TTSThread(Thread):
             message.duration = round(len(converted) / 2 / audio.get_sample_rate() * 1000, 2)
 
             # Emit an event to signal that we processed it
-            config.Event(
-                "WebsocketEvent",
-                "texttospeech",
-                "engineprocessed",
-                {
-                    "id": message.id,
-                    "timestamp": message.timestamp,
-                    "text": message.message,
-                    "duration": message.duration,
-                    "engineName": "Speekaboo Piper",
-                    "voiceName": voice_info["model_name"],
-                    "pitch":0.0,
-                    "volume": volume,
-                    "rate": 0.0
-                }
-            )
+            message.tts_event("engineprocessed")
+
             return converted
 
         except Exception as e: # pylint:disable=broad-exception-caught
             logging.error("Exception in parse_tts:", exc_info=e)
-            config.Event(
-                "WebsocketEvent",
-                "texttospeech",
-                "error",
-                {
-                    "id": message.id,
-                    "timestamp": message.timestamp,
-                    "text": message.message,
-                    "duration": 0.0,
-                    "engineName": "Speekaboo Piper",
-                    "voiceName": message.voice,
-                    "pitch":0.0,
-                    "volume": 0.0,
-                    "rate": 0.0,
-                    "speekaboo_exception": f"{e.args[0]}",
-                }
-            )
+            message.tts_event("error", e.args[0])
+
             return None
 
 

@@ -202,27 +202,3 @@ if config_folder:
 
 logging.basicConfig(level=logging.INFO, handlers=handlers)
 
-
-# https://stackoverflow.com/a/27315715
-class Observer():
-    """
-    Observer base class
-    """
-    observers = []
-    def __init__(self):
-        self.observers.append(self)
-        self.observables: dict[str, Callable] = {}
-    def observe(self, event_name, callback):
-        self.observables[event_name] = callback
-
-
-class Event():
-    def __init__(self, name, *args, autofire = True):
-        self.name = name
-        self.args = args
-        if autofire:
-            self.fire()
-    def fire(self):
-        for observer in Observer.observers:
-            if self.name in observer.observables:
-                observer.observables[self.name](*self.args)
