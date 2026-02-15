@@ -372,7 +372,7 @@ class VoiceAliasesTab(ttk.Frame):
             variation_input.grid(row=row, column=0, padx=5, pady=5, sticky=tk.NSEW)
             ToolTip(variation_input, text="How much variance to put in the voice pitch. Piper arg: noise_scale")
 
-            volume = LabeledWidget(self, "Volume", ttk.Scale, from_=0.0, to=1.0, variable=self.volume_var)
+            volume = LabeledWidget(self, "Volume", ttk.Scale, from_=0.0, to=100.0, variable=self.volume_var)
             volume.grid(row=row, column=1, padx=5, pady=5, sticky=tk.NSEW)
 
             row += 1
@@ -406,7 +406,7 @@ class VoiceAliasesTab(ttk.Frame):
             self.variation_var.set(config.config["voices"][voice].get("noise_scale", 0.667))
             self.length_variation_var.set(config.config["voices"][voice].get("noise_w", 0.8))
             self.speed_var.set(config.config["voices"][voice].get("length_scale", 1.0))
-            self.volume_var.set(config.config["voices"][voice].get("volume", 1.0))
+            self.volume_var.set(config.config["voices"][voice].get("volume", 1.0) * 100.0)
             self.speaker_id.set(config.config["voices"][voice].get("speaker_id", 0))
 
         def save_voice(self, voice: str):
@@ -429,7 +429,7 @@ class VoiceAliasesTab(ttk.Frame):
                 length_scale=self.speed_var.get(),
                 noise_scale=self.variation_var.get(),
                 noise_w=self.length_variation_var.get(),
-                volume=self.volume_var.get()
+                volume=self.volume_var.get() / 100.0
             )
             logging.info("Saving voice '%s': %s", voice, config.config["voices"][voice])
 
