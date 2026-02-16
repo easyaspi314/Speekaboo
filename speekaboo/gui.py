@@ -954,7 +954,7 @@ class SettingsTab(ttk.Frame):
             config.config["output_device"] = None
         else:
             config.config["output_device"] = device
-    
+        audio.audio.initialize()
 
     def validate_ip_addr(self, value: str):
         """
