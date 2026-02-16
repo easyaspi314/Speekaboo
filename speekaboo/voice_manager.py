@@ -42,15 +42,8 @@ class VoiceManager:
     def __init__(self):
         if config.data_folder is None:
             raise FileNotFoundError("No data folder found!")
-        
-        voices_file = config.data_folder / "voices.json"
-        # Update daily
-        needs_update = not voices_file.exists() or time.time() - voices_file.stat().st_mtime > (60 * 60 * 24)
-        try:
-            self.voices = PiperDownloader.get_voices(config.data_folder, needs_update)
-        except IOError:
-            self.voices = PiperDownloader.get_voices(config.data_folder, False)
-            logging.error("Couldn't parse downloads!")
+
+        self.voices = PiperDownloader.get_voices(config.data_folder, False)
         self.language = config.config["voice_language"]
         self.threads: dict[str, threading.Thread] = {}
 
@@ -84,6 +77,24 @@ class VoiceManager:
             return path[0]
         except (IOError, ValueError):
             return None
+    
+    def update_voice_list_thread(self):
+        try:
+            self.voices = PiperDownloader.get_voices(config.data_folder, True)
+            event.voices_changed(None, False)
+        except IOError:
+            pass
+
+    def update_voice_list(self):
+        try:
+            self.threads["VOICE_LIST"] = threading.Thread(
+                target=self.update_voice_list_thread,
+                name="Download Thread [voice list]"
+            )
+            self.threads["VOICE_LIST"].start()
+        except IOError:
+            logging.error("Failed to download voice list")
+
 
 
     def is_voice_installed(self, voice: str) -> bool:

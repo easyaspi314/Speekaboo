@@ -92,5 +92,5 @@ def loaded_voice(voice_name: str, size: float):
         }
     )
 
-def voices_changed(voice: str, installed: bool):
+def voices_changed(voice: str|None, installed: bool):
     Event("voices_changed", voice, installed)

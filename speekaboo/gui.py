@@ -630,13 +630,18 @@ class DownloadVoicesTab(ttk.Frame, event.Observer):
 
     Shows a Treeview with all the available voices to download
     """ 
-    def set_installed(self, voice: str, installed: bool):
+    def set_installed(self, voice: str|None, installed: bool):
         """
         Observer callback. This may be called after the window is destroyed.
         """
 
         if window is None:
             return
+        
+        if voice is None:
+            self.parse_voices()
+            return
+        
         # not in list and installing? add it to additional voices
         if not self.voices_list.exists(voice) and installed:
             self.voices_list.insert("/additional_voices", tk.END, iid=voice, text=voice)
@@ -718,6 +723,12 @@ class DownloadVoicesTab(ttk.Frame, event.Observer):
             )
             logging.error("Failed to find file", exc_info=e)
 
+    def handle_refreshvoices(self):
+        """
+        Refreshes the voice list with the latest from Hugging Face
+        """
+
+        vm.update_voice_list()
 
     def __init__(self, parent, *args, **kwargs):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
@@ -725,7 +736,7 @@ class DownloadVoicesTab(ttk.Frame, event.Observer):
 
         self.observe("voices_changed", self.set_installed)
         treeview_container = ttk.Frame(self)
-        treeview_container.grid(row=0, column=0, columnspan=2, sticky=tk.NSEW)
+        treeview_container.grid(row=0, column=0, columnspan=3, sticky=tk.NSEW)
         treeview_container.grid_columnconfigure(0, weight=1)
         treeview_container.grid_rowconfigure(0, weight=1)
         self.voices_list = ttk.Treeview(treeview_container, selectmode="browse", columns=("C1", "C2", "C3", "C4"))
@@ -750,8 +761,10 @@ class DownloadVoicesTab(ttk.Frame, event.Observer):
         self.installbutton.grid(row=1,column=0, padx=5, pady=5, sticky=tk.NSEW)
         self.addmanualbutton= ttk.Button(self, text="Add voice manually from file", command = self.handle_addmanualbutton)
         self.addmanualbutton.grid(row=1, column=1, padx=5, pady=5, sticky=tk.NSEW)
+        self.refreshvoices=ttk.Button(self, text="Update voice list", command=self.handle_refreshvoices)
+        self.refreshvoices.grid(row=1, column=2, padx=5, pady=5, sticky=tk.NSEW)
         self.pack(expand=True, fill="y")
-        for i in range(2):
+        for i in range(3):
             self.grid_columnconfigure(i, weight=1, uniform='install_button')
         self.grid_rowconfigure(0, weight=1)
     # https://stackoverflow.com/a/14822210
