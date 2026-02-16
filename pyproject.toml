@@ -15,13 +15,12 @@ dependencies = [
     'piper_phonemize_fix>=1.2.1',
     'onnxruntime>=1.19.0',
     'appdirs>=1.4.4',
-    'tkfilebrowser',
+    'filedialogs',
     'darkdetect',
     'tkinter-tooltip',
     'psutil',
     'cachetools',
     'sv_ttk',
-    'cuda_available',
     'pywin32; sys_platform == "win32"'
 ]
 

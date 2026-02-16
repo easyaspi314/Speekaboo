@@ -19,6 +19,7 @@
 # THE SOFTWARE.
 
 import os
+from pathlib import Path
 import re
 import logging
 import sys
@@ -29,13 +30,11 @@ from typing import Any, Literal
 import tkinter as tk
 from tkinter import TclError, ttk, messagebox, simpledialog
 
-import tkfilebrowser
+import filedialogs
 import tktooltip
 import darkdetect
 import sv_ttk
 
-import cuda_available
-import onnxruntime as ort
 
 import config
 import event
@@ -703,29 +702,9 @@ class DownloadVoicesTab(ttk.Frame, event.Observer):
         """
         Handler for adding manual voices
         """
-
-        real_treeview_insert = ttk.Treeview.insert
-
-        def treeview_insert_patch(self: ttk.Treeview, parent: str, index: int | Literal['end'], iid: str|int|None =None, **kwargs):
-            """
-            UGLY HACK:
-                TkFileBrowser has a bug where if you bookmark a mounted drive on Linux, it will crash
-                because it tries to add the same bookmark twice.
-
-                I might fork the old file browser, bugs aside it is so much nicer than native Tk.
-            """
-            if iid is not None and self.exists(iid):
-                return str(iid)
-
-            return real_treeview_insert(self, parent, index, iid, **kwargs)
-        # patch treeview
-        ttk.Treeview.insert = treeview_insert_patch
-        # ask for file
-        path = tkfilebrowser.askopenfilename(parent=self, filetypes=[("ONNX voice model (*.onnx)", "*.onnx")])
-        # unpatch treeview
-        ttk.Treeview.insert = real_treeview_insert
-
-        if len(path) == 0: # user pressed cancel
+        path: Path|None = filedialogs.askfile(file_filter_opts={ "ONNX model": "*.onnx" }, title="Open an ONNX voice model")
+ 
+        if path is None: # user pressed cancel
             return
 
         try:
