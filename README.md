@@ -37,7 +37,7 @@ For an EN-US voice, I recommend Amy Medium.
 - [x] Manually playing text
 - [ ] Denial-of-service prevention
   - [x] Stop button stops playback
-  - [ ] Stop button stops TTS processing
+  - [x] Stop button stops TTS processing
   - [x] Word limit (partial, doesn't include reading out special characters)
   - [x] CPU thread limits
   - [x] Memory usage limits
