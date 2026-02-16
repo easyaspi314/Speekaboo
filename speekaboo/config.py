@@ -137,7 +137,7 @@ def load_config():
         "output_device": None,                            # Audio output device (null = default)
         "volume": 1.0,                                    # Output volume
         "queue_delay": 0.0,                               # Delay before playing voices (to allow time for moderation)
-        "max_words": 25,                                  # Maximum number of words
+        "max_words": 100,                                 # Maximum number of words
         "max_memory_usage": min(512, system_mem // 32),   # Cache size. Default to 512 MiB or 1/32 system memory.
         "text_replacement": "filtered",                   # neuro-sama reference :)
         "num_threads": preferred_threads,                 # Number of threads for CPU inference
