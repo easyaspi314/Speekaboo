@@ -182,6 +182,7 @@ class TTSThread(Thread):
         super().__init__(name="TTS Parsing Thread")
         self.queue = queue.Queue()
         self.running = False
+        self.interrupt = False
 
     def parse_tts(self, message: MessageInfo):
 
@@ -213,6 +214,7 @@ class TTSThread(Thread):
             if config.config["max_words"] > 0 and num_words > config.config["max_words"]:
                 raise OverflowError("Text is longer than word limit")
 
+            self.interrupt = False
             for sentence in voice.synthesize_stream_raw(message.message,
                     speaker_id=voice_info.get("speaker_id", 0),
                     length_scale=voice_info.get("length_scale", 1.0),
@@ -220,6 +222,11 @@ class TTSThread(Thread):
                     noise_w=voice_info.get("noise_w", 0.8),
                     max_words=config.config["max_words"]
                     ):
+                
+                if not self.running:
+                    return
+                if self.interrupt:
+                    raise InterruptedError("Manually stopped")
                 # Adjust the volume
                 if abs(volume - 1.0) > 0.01: # volume != 1.0
 
@@ -260,12 +267,17 @@ class TTSThread(Thread):
         except OverflowError:
             message.tts_event("error", "Message too long")
             return None
+        except InterruptedError:
+            message.tts_event("error", "Parsing cancelled")
+            return None
         except Exception as e: # pylint:disable=broad-exception-caught
             logging.error("Exception in parse_tts:", exc_info=e)
             message.tts_event("error", e.args[0])
 
             return None
 
+    def stop_parsing(self):
+        self.interrupt = True
 
     def stop(self):
         self.running = False

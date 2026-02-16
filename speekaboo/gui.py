@@ -200,7 +200,7 @@ class MainTab(ttk.Frame, event.Observer):
 
         row += 1
 
-        self.stop_button = ttk.Button(self, text="Stop", command=audio.audio.stop_playback)
+        self.stop_button = ttk.Button(self, text="Stop", command=self.stop_playback)
         self.stop_button.grid(row=row, column=0, padx=5, pady=5, sticky=tk.NSEW)
         ToolTip(self.stop_button, text="Stop the currently playing message")
         self.pause_button_var = tk.StringVar(value="Pause")
@@ -228,6 +228,10 @@ class MainTab(ttk.Frame, event.Observer):
         self.pause_button_var.set("Pause" if config.paused else "Resume")
 
         config.paused = not config.paused
+
+    def stop_playback(self):
+        tts.tts_thread.stop_parsing()
+        audio.audio.stop_playback()
 
     def disable(self):
         self.disable_button_var.set("Enable" if config.enabled else "Disable")
