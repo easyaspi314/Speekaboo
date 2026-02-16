@@ -257,7 +257,9 @@ class TTSThread(Thread):
             message.tts_event("engineprocessed")
 
             return converted
-
+        except OverflowError:
+            message.tts_event("error", "Message too long")
+            return None
         except Exception as e: # pylint:disable=broad-exception-caught
             logging.error("Exception in parse_tts:", exc_info=e)
             message.tts_event("error", e.args[0])
