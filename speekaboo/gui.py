@@ -297,7 +297,7 @@ class MainTab(ttk.Frame, event.Observer):
                 case "loaded_voice":
                     self.write_to_log(f"Loaded voice {data['voice']}, Estimated memory usage: {data['mem']:.1f} MiB")
                 case "warn":
-                    self.write_to_log(f"EWarning: {data['message']}")
+                    self.write_to_log(f"Warning: {data['message']}")
                 case "info":
                     self.write_to_log(f"Info: {data['message']}")
         else:
