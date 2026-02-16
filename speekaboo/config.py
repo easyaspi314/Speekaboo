@@ -72,8 +72,9 @@ def join_or_die(thread: threading.Thread):
 
     if thread.is_alive():
         logging.error("Timeout when joining thread %s", thread.name)
-        logging.shutdown()
         save_config()
+        logging.shutdown()
+
         # kill everything
         os._exit(1)
 
