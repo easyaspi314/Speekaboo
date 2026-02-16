@@ -1,7 +1,7 @@
 # Speekaboo
 
 Speekaboo is an offline text-to-speech program that communicates using the [Speaker.bot](https://speaker.bot) API.
-It uses [Piper](https://github.com/rhasspy/piper) as the text-to-speech engine.
+It uses a customized version of [Piper](https://github.com/rhasspy/piper) as the text-to-speech engine.
 
 It is intended to be controlled by external programs like [Streamer.bot](https://streamer.bot).
 
@@ -105,8 +105,11 @@ speekaboo
 
 ## Notice
 
-Copyright (c) 2025-2026 easyaspi314  
+Copyright (c) 2025-2026 easyaspi314
 Released under the MIT License.
+
+This project includes code from the original version of Piper TTS, which is Copyright (c) 2022 Michael Hansen, also
+released under the MIT License.
 
 Speekaboo is not affiliated with Speaker.bot or Streamer.bot in any way.
 
