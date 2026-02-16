@@ -238,10 +238,10 @@ class AudioThread(threading.Thread):
 
                 message.tts_event("finished")
 
-        logging.info("Closing audio thread")
+        logging.debug("Closing audio thread")
 
     def stop(self):
-        logging.info("Shutting down audio")
+        logging.debug("Shutting down audio")
         self.stop_playback()
         self.running = False
         if self.device is not None:

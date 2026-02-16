@@ -55,7 +55,7 @@ class VoiceManager:
             if thread.is_alive():
                 if not notified:
                     notified = True
-                    print("Waiting for downloads to complete...")
+                    logging.info("Waiting for downloads to complete...")
                 thread.join()
         self.threads.clear()
 

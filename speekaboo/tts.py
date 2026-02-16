@@ -127,7 +127,7 @@ def get_voice_impl(voicepath: Path) -> tuple[PiperVoice, float]: # model, memory
     Since these voices can take up a lot of memory but also take a lot of time to load,
     we use cachetools to make a least 
     """
-    logging.info("Loading voice %s", voicepath.stem)
+    logging.debug("Loading voice %s", voicepath.stem)
 
     event.loading_voice(voicepath.stem)
     proc = psutil.Process()
@@ -138,7 +138,7 @@ def get_voice_impl(voicepath: Path) -> tuple[PiperVoice, float]: # model, memory
 
     end_memory_usage = proc.memory_info().rss
     diff_in_mb = (end_memory_usage - start_memory_usage) / (1024.0 * 1024.0)
-    logging.info("Estimated memory usage: %.2f MiB", diff_in_mb)
+    logging.debug("Estimated memory usage: %.2f MiB", diff_in_mb)
 
     event.loaded_voice(voicepath.stem, diff_in_mb)
     return (voice, diff_in_mb)
@@ -171,8 +171,6 @@ class TTSThread(Thread):
                 raise ValueError(f"Cannot find voice path for {voice_info['model_name']}")
 
             voice = get_voice(voice_path)
-
-            logging.info("Speaker ID: %d", voice_info.get("speaker_id", 0))
 
             raw_pcms = []
 
@@ -251,7 +249,7 @@ class TTSThread(Thread):
 
     def stop(self):
 
-        logging.info("Joining TTS thread")
+        logging.debug("Joining TTS thread")
         self.running = False
         self.interrupt = True
 
@@ -276,6 +274,6 @@ class TTSThread(Thread):
                     continue
                 audio.push(message)
 
-        logging.info("Done running TTS thread")
+        logging.debug("Done running TTS thread")
 
 tts_thread = TTSThread()

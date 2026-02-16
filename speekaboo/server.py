@@ -98,7 +98,7 @@ class SpeekabooHandler:
         } 
         """
         audio.audio.stop_playback()
-
+        tts.tts_thread.stop_parsing()
         return {}
 
     def cmd_enable(self, _json_data: dict):
@@ -194,7 +194,7 @@ class SpeekabooHandler:
             "command": "clear"
         }
         """
-        tts.clear()
+        audio.audio.clear()
         return {}
 
 
@@ -211,7 +211,7 @@ class SpeekabooHandler:
             "version": "0.1.4",
             "os": "windows",
             "apiVersion": 2,
-            "speekabooVersion": "0.2.0"
+            "speekabooVersion": config.VERSION
         }
 
     
@@ -395,7 +395,7 @@ class WSServer(Thread, SpeekabooHandler, event.Observer):
 
         self.active_connections[conn_id].subscribed_events = subscribed
 
-        logging.info("Subscribed %s, current events: %s", conn_id, subscribed)
+        logging.debug("Subscribed %s, current events: %s", conn_id, subscribed)
         return {"events": events}
 
     def do_unsubscribe(self, json_data: dict, conn_id: str):
@@ -479,7 +479,7 @@ class WSServer(Thread, SpeekabooHandler, event.Observer):
         response["data"] = data
 
         stringified = json.dumps(response)
-        logging.info("Sending event %s", stringified)
+        logging.debug("Sending event %s", stringified)
 
         for conn_data in self.active_connections.values():
             if event_source.lower() not in conn_data.subscribed_events:
@@ -531,7 +531,7 @@ class WSServer(Thread, SpeekabooHandler, event.Observer):
 
             respjson = json.dumps({ "id": json_data["id"], "status": "ok", "result": response})
 
-            logging.info("Responding %s", respjson)
+            logging.debug("Responding %s", respjson)
 
             return respjson
         except ValueError as e:
@@ -551,7 +551,7 @@ class WSServer(Thread, SpeekabooHandler, event.Observer):
 
         # Create an ID for self.active_connections, e.g. 127.0.0.1:45748
         conn_id = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
-        logging.info("New Websocket connection: %s", conn_id)
+        logging.debug("New Websocket connection: %s", conn_id)
 
         # Add it to the active connection info.
         with self.lock:
@@ -614,12 +614,12 @@ class WSServer(Thread, SpeekabooHandler, event.Observer):
         """
         Stops the WebSocket server.
         """
-        logging.info("Shutting down WSServer...")
+        logging.debug("Shutting down WSServer...")
         if self.server is not None:
             self.shutting_down = True
             with self.lock:
                 if len(self.active_connections) > 0:
-                    logging.info("Waiting for connections to close...")
+                    logging.debug("Waiting for connections to close...")
                     # Close all active connections
                     for conn in self.active_connections.values():
                         conn.websocket.close(CloseCode.GOING_AWAY)
@@ -667,7 +667,7 @@ class UDPServer(Thread, SpeekabooHandler):
             Handles a UDP connection.
             """
             self.data: bytes = self.request[0].strip()
-            logging.info("Received UDP data: %s", self.data.decode("utf-8"))
+            logging.debug("Received UDP data: %s", self.data.decode("utf-8"))
             parse_speaker_bot_udp(udp_thread, self.data.decode("utf-8"))
 
 
@@ -699,7 +699,7 @@ class UDPServer(Thread, SpeekabooHandler):
         """
         Shuts down the UDP server.
         """
-        logging.info("Shutting down UDPServer...")
+        logging.debug("Shutting down UDPServer...")
         if self.server is not None:
             self.server.shutdown()
             self.server = None

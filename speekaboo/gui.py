@@ -68,7 +68,7 @@ class ExceptionHandlingTk(tk.Tk, event.Observer):
 
 
 window = ExceptionHandlingTk(className="Speekaboo")
-window.title("Speekaboo 0.2.0")
+window.title(f"Speekaboo {config.VERSION}")
 
 window.geometry("800x500")
 window.minsize(width=800, height=500)
@@ -117,6 +117,8 @@ def do_close():
 
     if not config.running:
         return
+    
+    logging.info("Shutting down Speekaboo...")
     config.running = False
 
     if window is not None:
@@ -285,9 +287,8 @@ class MainTab(ttk.Frame, event.Observer):
         self.queue_box.yview_moveto(0.0)
 
     def handle_event(self, event_source: str, event_type: str = '', data: dict|None = None):
-        # print(event_source, event_type, data)
         if window is None or data is None:
-            logging.info("Event on dead instance")
+            logging.warning("Event on dead instance")
             return
 
         if event_source == "internal_event":
@@ -434,7 +435,7 @@ class VoiceAliasesTab(ttk.Frame):
                 noise_w=self.length_variation_var.get(),
                 volume=self.volume_var.get() / 100.0
             )
-            logging.info("Saving voice '%s': %s", voice, config.config["voices"][voice])
+            logging.debug("Saving voice '%s': %s", voice, config.config["voices"][voice])
 
         def test_voice(self):
             """
@@ -455,7 +456,7 @@ class VoiceAliasesTab(ttk.Frame):
             if len(voice) == 0:
                 return
             
-            logging.info("setting %s to %s", self.name_var.get(), voice)
+            logging.debug("setting %s to %s", self.name_var.get(), voice)
 
             self.voice_config = vm.get_voice_config(voice) or {"num_speakers": 1}
             num_speaker = self.voice_config["num_speakers"]
@@ -718,7 +719,7 @@ class DownloadVoicesTab(ttk.Frame, event.Observer):
 
         try:
             vm.register_voice(str(path))
-            logging.info("Registered voice %s", path)
+            logging.debug("Registered voice %s", path)
 
         except ValueError as e:
             messagebox.showerror(

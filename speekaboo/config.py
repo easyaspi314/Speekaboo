@@ -23,6 +23,7 @@ import json
 import logging
 from typing import Callable
 import sys
+import importlib.metadata
 import getpass
 import tkinter as tk
 from tkinter import messagebox
@@ -30,6 +31,15 @@ import threading
 from pathlib import Path
 from appdirs import AppDirs
 import psutil
+
+VERSION = importlib.metadata.version("speekaboo") or "0.3.0a1"
+# Global UUID for the program. Definitely generated randomly, definitely has no
+# significance whatsoever :)
+GLOBAL_UUID = "3243f6a8-885a-308d-3131-98a2e0370734"
+running = True
+paused = False
+enabled = True
+dirinfo = AppDirs("Speekaboo")
 
 # Set up some exception handlers. These are handled in gui.poll().
 waiting_exceptions = {}
@@ -77,14 +87,6 @@ def join_or_die(thread: threading.Thread):
 
         # kill everything
         os._exit(1)
-
-# Global UUID for the program. Definitely generated randomly, definitely has no
-# significance whatsoever :)
-GLOBAL_UUID = "3243f6a8-885a-308d-3131-98a2e0370734"
-running = True
-paused = False
-enabled = True
-dirinfo = AppDirs("Speekaboo")
 
 def try_create_folder(pathname: str|Path) -> Path:
     # Don't show the username on screen
@@ -209,9 +211,14 @@ def save_config() -> bool:
     return False
 
 stdout_handler = logging.StreamHandler(sys.stdout)
+stdout_handler.setLevel(logging.DEBUG if debug > 0 else logging.INFO)
 handlers = [stdout_handler]
 if config_folder:
-    handlers.append(logging.FileHandler(config_folder / "Speekaboo.log"))
+    file_handler = logging.FileHandler(config_folder / "Speekaboo.log")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s:%(name)s:%(message)s'))
+    handlers.append(file_handler)
 
-logging.basicConfig(level=logging.DEBUG if debug > 0 else logging.INFO, handlers=handlers)
+logging.basicConfig(level=logging.DEBUG, handlers=handlers)
 
+logging.info("Speekaboo %s (Python %s, %s)", VERSION, sys.version, sys.platform)

@@ -1,6 +1,6 @@
 [project]
 name = "speekaboo"
-version = "0.2.0"
+version = "0.3.0a1"
 description = "A drop-in replacement for Speaker.bot using Piper TTS"
 authors = [
     {name = "easyaspi314",email = "6258309+easyaspi314@users.noreply.github.com"}
