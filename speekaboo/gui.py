@@ -1019,7 +1019,7 @@ def poll():
         window.after(100, poll)
 
 # Catch KeyboardInterrupt gracefully
-if os.getenv("SPEEKABOO_DEBUG") != "1":
+if config.debug < 2:
     signal.signal(signal.SIGINT, lambda _x, _y: do_close())
 
 # Run cleanup when the user closes the window
@@ -1040,4 +1040,3 @@ window.after(80, start_threads)
 
 window.mainloop()
 # unreachable
-do_close()

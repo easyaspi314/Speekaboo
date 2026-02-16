@@ -34,35 +34,48 @@ import psutil
 # Set up some exception handlers. These are handled in gui.poll().
 waiting_exceptions = {}
 
-def exception_hook(exc: type, val: BaseException, tb, name="Main thread"):
-    """
-    Main exception hook
-    """
-    waiting_exceptions[name] = (exc, val, tb)
-    logging.error("Received exception in %s!", name, exc_info=(exc, val, tb))
+# 0/unset: normal operation
+# 1: Logging set to debug
+# 2+: Ctrl+C and exception handlers disabled
+debug = int(os.getenv("SPEEKABOO_DEBUG") or "0")
 
-    censored = str(val).replace(getpass.getuser(), "$USER")
-    try:
-        messagebox.showerror(
-            title="Exception!",
-            message=f"Fatal exception in {name}:\n{exc.__name__}(\"{censored}\")"
-        )
-    except: # pylint:disable=bare-except
-        pass
-    # os._exit(0)
+if debug < 2:
+    def exception_hook(exc: type, val: BaseException, tb, name="Main thread"):
+        """
+        Main exception hook
+        """
+        waiting_exceptions[name] = (exc, val, tb)
+        logging.error("Received exception in %s!", name, exc_info=(exc, val, tb))
 
-def thread_exception_hook(args):
-    """
-    Exception hook for a sub thread.
-    """
-    name = "Unknown Thread"
-    if isinstance(args.thread, threading.Thread) and args.thread.name :
-        name = args.thread.name or "Unknown Thread"
-    else:
+    def thread_exception_hook(args):
+        """
+        Exception hook for a sub thread.
+        """
         name = "Unknown Thread"
-    exception_hook(args.exc_type, args.exc_value, args.exc_traceback, name)
+        if isinstance(args.thread, threading.Thread) and args.thread.name :
+            name = args.thread.name or "Unknown Thread"
+        else:
+            name = "Unknown Thread"
+        exception_hook(args.exc_type, args.exc_value, args.exc_traceback, name)
 
-threading.excepthook = thread_exception_hook
+    threading.excepthook = thread_exception_hook
+
+def join_or_die(thread: threading.Thread):
+    """
+    Like thread.join(), but handles timeouts and kills the program if it times out
+    """
+    try:
+        # Wait 5 seconds
+        thread.join(5)
+    except RuntimeError: # 3.14+: PythonFinalizationError
+        return
+
+    if thread.is_alive():
+        logging.error("Timeout when joining thread %s", thread.name)
+        logging.shutdown()
+        save_config()
+        # kill everything
+        os._exit(1)
 
 # Global UUID for the program. Definitely generated randomly, definitely has no
 # significance whatsoever :)
@@ -71,7 +84,6 @@ running = True
 paused = False
 enabled = True
 dirinfo = AppDirs("Speekaboo")
-debug = os.getenv("SPEEKABOO_DEBUG") == "1"
 
 def try_create_folder(pathname: str|Path) -> Path:
     # Don't show the username on screen
@@ -200,5 +212,5 @@ handlers = [stdout_handler]
 if config_folder:
     handlers.append(logging.FileHandler(config_folder / "Speekaboo.log"))
 
-logging.basicConfig(level=logging.DEBUG if debug else logging.INFO, handlers=handlers)
+logging.basicConfig(level=logging.DEBUG if debug > 0 else logging.INFO, handlers=handlers)
 

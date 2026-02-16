@@ -210,7 +210,7 @@ class AudioThread(threading.Thread):
             while self.running and (len(self.queue) == 0 or self.playing):
                 time.sleep(0.5)
 
-            while len(self.queue) > 0 and not config.paused and self.running:
+            while self.running and len(self.queue) > 0 and not config.paused:
 
                 message = self.peek()
                 if message is None or message.parsed_data is None:
@@ -241,13 +241,11 @@ class AudioThread(threading.Thread):
         logging.info("Closing audio thread")
 
     def stop(self):
-        if not self.is_alive():
-            return
         logging.info("Shutting down audio")
         self.stop_playback()
         self.running = False
         if self.device is not None:
             self.device.close()
-        self.join()
+        config.join_or_die(self)
 
 audio = AudioThread()

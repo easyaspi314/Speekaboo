@@ -19,6 +19,7 @@
 # THE SOFTWARE.
 
 from dataclasses import dataclass
+import os
 import queue
 import logging
 from pathlib import Path
@@ -243,17 +244,18 @@ class TTSThread(Thread):
             message.tts_event("error", e.args[0])
 
             return None
+        
 
     def stop_parsing(self):
         self.interrupt = True
 
     def stop(self):
-        self.running = False
-        if not self.is_alive():
-            return
 
-        self.join()
-        logging.info("Joined TTS thread")
+        logging.info("Joining TTS thread")
+        self.running = False
+        self.interrupt = True
+
+        config.join_or_die(self)
 
     def run(self):
         from audio import audio
@@ -262,7 +264,7 @@ class TTSThread(Thread):
         set_onnx_limit(config.config.get("onnx_memory_limit", 1024) * 1024 * 1024)
 
         while self.running:
-            while _parsing_queue.qsize() == 0 and self.running:
+            while self.running and _parsing_queue.qsize() == 0:
                 sleep(0.5)
             if self.running:
                 message = _parsing_queue.get()

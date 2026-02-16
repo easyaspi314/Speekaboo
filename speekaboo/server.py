@@ -17,6 +17,7 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
+import os
 import socketserver
 from threading import Thread, Lock
 import datetime
@@ -575,7 +576,8 @@ class WSServer(Thread, SpeekabooHandler, event.Observer):
 
         # Delete the connection
         with self.lock:
-            del self.active_connections[conn_id]
+            if conn_id in self.active_connections:
+                del self.active_connections[conn_id]
 
 
     def __init__(self, ws_addr: str = config.config["ws_server_addr"], ws_port: int = config.config["ws_server_port"]):
@@ -612,8 +614,6 @@ class WSServer(Thread, SpeekabooHandler, event.Observer):
         """
         Stops the WebSocket server.
         """
-        if not self.is_alive():
-            return
         logging.info("Shutting down WSServer...")
         if self.server is not None:
             self.shutting_down = True
@@ -630,7 +630,8 @@ class WSServer(Thread, SpeekabooHandler, event.Observer):
 
             self.shutting_down = False
             self.server = None
-        self.join()
+
+        config.join_or_die(self)
 
     def is_running(self) -> bool:
         return self.server is not None
@@ -698,13 +699,12 @@ class UDPServer(Thread, SpeekabooHandler):
         """
         Shuts down the UDP server.
         """
-        if not self.is_alive():
-            return
         logging.info("Shutting down UDPServer...")
         if self.server is not None:
             self.server.shutdown()
             self.server = None
-        self.join()
+
+        config.join_or_die(self)
 
     def is_running(self) -> bool:
         return self.server is not None
