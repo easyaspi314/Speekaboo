@@ -1002,7 +1002,8 @@ def poll():
         window.after(100, poll)
 
 # Catch KeyboardInterrupt gracefully
-signal.signal(signal.SIGINT, lambda _x, _y: do_close())
+if os.getenv("SPEEKABOO_DEBUG") != "1":
+    signal.signal(signal.SIGINT, lambda _x, _y: do_close())
 
 # Run cleanup when the user closes the window
 window.protocol("WM_DELETE_WINDOW", do_close)

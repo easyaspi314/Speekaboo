@@ -71,7 +71,7 @@ running = True
 paused = False
 enabled = True
 dirinfo = AppDirs("Speekaboo")
-
+debug = os.getenv("SPEEKABOO_DEBUG") == "1"
 
 def try_create_folder(pathname: str|Path) -> Path:
     # Don't show the username on screen
@@ -200,5 +200,5 @@ handlers = [stdout_handler]
 if config_folder:
     handlers.append(logging.FileHandler(config_folder / "Speekaboo.log"))
 
-logging.basicConfig(level=logging.INFO, handlers=handlers)
+logging.basicConfig(level=logging.DEBUG if debug else logging.INFO, handlers=handlers)
 
