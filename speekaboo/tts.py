@@ -210,15 +210,15 @@ class TTSThread(Thread):
 
             num_words = len(message.message.split())
 
-            if config.config["max_words"] != 0 and num_words > config.config["max_words"]:
-                return bytearray()
+            if config.config["max_words"] > 0 and num_words > config.config["max_words"]:
+                raise OverflowError("Text is longer than word limit")
 
             for sentence in voice.synthesize_stream_raw(message.message,
                     speaker_id=voice_info.get("speaker_id", 0),
                     length_scale=voice_info.get("length_scale", 1.0),
                     noise_scale=voice_info.get("noise_scale", 0.667),
-                    noise_w=voice_info.get("noise_w", 0.8)
-
+                    noise_w=voice_info.get("noise_w", 0.8),
+                    max_words=config.config["max_words"]
                     ):
                 # Adjust the volume
                 if abs(volume - 1.0) > 0.01: # volume != 1.0

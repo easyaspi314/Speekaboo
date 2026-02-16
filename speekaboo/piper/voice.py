@@ -144,14 +144,22 @@ class PiperVoice:
         yield text[last_start:]
 
 
-    def phonemize_with_limit(self, text: str) -> List[Tuple[List[str], bool]]:
+    def phonemize_with_limit(self, text: str, max_words: int) -> Optional[List[Tuple[List[str], bool]]]:
         """
         Like phonemize_impl, but splits up long sentences. Long sentences can consume
         gigabytes of RAM when inferencing.
         """
         phonemes = self.phonemize(text)
+
+        num_words = 0
+
         out: List[Tuple[List[str], bool]] = []
         for sentence in phonemes:
+            num_words += 1 + sentence.count(' ')
+
+            if max_words > 0 and num_words > max_words:
+                return None
+
             if len(sentence) > self.max_phonemes:
                 for fragment in self.split_at_commas(sentence):
                     if fragment:
@@ -195,9 +203,13 @@ class PiperVoice:
         noise_scale: Optional[float] = None,
         noise_w: Optional[float] = None,
         sentence_silence: float = 0.0,
+        max_words: int = 0
     ) -> Iterable[bytes]:
         """Synthesize raw audio per sentence from text."""
-        sentence_phonemes = self.phonemize_with_limit(text)
+        sentence_phonemes = self.phonemize_with_limit(text, max_words)
+
+        if sentence_phonemes is None:
+            raise OverflowError("Text is longer than word limit")
 
         # 16-bit mono
         num_silence_samples = int(sentence_silence * self.config.sample_rate)
