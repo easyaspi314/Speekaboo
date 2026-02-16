@@ -18,6 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+from collections import deque
 import os
 import sys
 import time
@@ -41,12 +42,45 @@ class AudioThread(threading.Thread):
     """
     busy = False
 
+    def pop(self) -> tts.MessageInfo|None:
+        if len(self.queue) > 0:
+            return self.queue.popleft()
+        else:
+            return None
+
+    def peek(self, idx: int = 0) -> tts.MessageInfo | None:
+        if len(self.queue) > idx:
+            return self.queue[idx]
+        else:
+            return None
+
+    def num_items(self) -> int:
+        return len(self.queue)
+
+    def to_list(self) -> list[tts.MessageInfo]:
+        lst = list(self.queue)
+        return lst
+
+
+    def toggle_skip(self, message: tts.MessageInfo):
+        try:
+            idx = self.queue.index(message)
+            self.queue[idx].skip = not self.queue[idx].skip
+        except ValueError:
+            pass
+
+    def clear(self):
+        self.queue.clear()
+
+    def push(self, message: tts.MessageInfo):
+        self.queue.append(message)
+
     def __init__(self):
         """
         Constructor
         """
         super().__init__(name="Audio Thread")
-        self.queue = queue.Queue()
+        self.queue = deque()
         self.condition = threading.Condition()
         self.playing = False
         self.running = False
@@ -66,7 +100,9 @@ class AudioThread(threading.Thread):
 
         wanted_device = config.config["output_device"]
 
-        if wanted_device is not None and wanted_device in self.playback_devices:
+        if self.playback_devices is not None \
+                and wanted_device is not None \
+                and wanted_device in self.playback_devices:
             output_device = self.playback_devices[wanted_device][1]["id"]
         else:
             if wanted_device is not None:
@@ -171,18 +207,18 @@ class AudioThread(threading.Thread):
         while self.running:
 
             # todo: make this a condition variable
-            while self.running and (len(tts._queue) == 0 or self.playing):
+            while self.running and (len(self.queue) == 0 or self.playing):
                 time.sleep(0.5)
 
-            while len(tts._queue) > 0 and not config.paused and self.running:
+            while len(self.queue) > 0 and not config.paused and self.running:
 
-                message = tts.peek()
+                message = self.peek()
                 if message is None or message.parsed_data is None:
                     break
 
-                tts.pop()
+                self.pop()
                 if self.device is None:
-                    message.tts_event(error, "No audio devices")
+                    message.tts_event("error", "No audio devices")
                     continue
 
                 

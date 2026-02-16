@@ -83,7 +83,6 @@ class MessageInfo:
         )
 
 _parsing_queue: queue.Queue[MessageInfo] = queue.Queue()
-_queue: deque[MessageInfo] = deque()
 
 def add(message: str, voice: str, timestamp: datetime.datetime = datetime.datetime.now(), censor: bool = False):
     message = message.strip()
@@ -109,37 +108,6 @@ def add(message: str, voice: str, timestamp: datetime.datetime = datetime.dateti
  
     return str(msg_id)
     
-
-def pop() -> MessageInfo|None:
-    if len(_queue) > 0:
-        return _queue.popleft()
-    else:
-        return None
-
-def peek(idx: int = 0) -> MessageInfo | None:
-    if len(_queue) > idx:
-        return _queue[idx]
-    else:
-        return None
-
-def num_items() -> int:
-    return len(_queue)
-
-def to_list() -> list[MessageInfo]:
-    lst = list(_queue)
-    return lst
-
-
-def toggle_skip(message: MessageInfo):
-    try:
-        idx = _queue.index(message)
-        _queue[idx].skip = not _queue[idx].skip
-    except ValueError:
-        pass
-
-def clear():
-    _queue.clear()
-
 def set_onnx_limit(size: int):
     """ Set a limit for ONNX because if unchecked, ONNX _will_ use all your RAM """
     ort_arena_config = ort.OrtArenaCfg(size, -1, -1, -1)
@@ -288,6 +256,8 @@ class TTSThread(Thread):
         logging.info("Joined TTS thread")
 
     def run(self):
+        from audio import audio
+
         self.running = True
         set_onnx_limit(config.config.get("onnx_memory_limit", 1024) * 1024 * 1024)
 
@@ -302,7 +272,7 @@ class TTSThread(Thread):
                 _parsing_queue.task_done()
                 if message.parsed_data is None:
                     continue
-                _queue.append(message)
+                audio.push(message)
 
         logging.info("Done running TTS thread")
 

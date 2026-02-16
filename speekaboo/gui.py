@@ -239,8 +239,8 @@ class MainTab(ttk.Frame, event.Observer):
         config.enabled = not config.enabled
 
     def clear(self):
-        queued = tts.to_list()
-        tts.clear()
+        queued = audio.audio.to_list()
+        audio.audio.clear()
         for message in queued:
             self.queue_box.delete(message.id)
 
