@@ -105,7 +105,7 @@ speekaboo
 
 ## Notice
 
-Copyright (c) 2025-2026 easyaspi314
+Copyright (c) 2025-2026 easyaspi314.  
 Released under the MIT License.
 
 This project includes code from the original version of Piper TTS, which is Copyright (c) 2022 Michael Hansen, also
