@@ -90,7 +90,7 @@ def join_or_die(thread: threading.Thread):
 
 def try_create_folder(pathname: str|Path) -> Path:
     # Don't show the username on screen
-    censored_path = str(pathname).replace(r'getpass.getuser()', "$USER", 1)
+    censored_path = str(pathname).replace(rf'{getpass.getuser()}', "$USER", 1)
     path = Path(pathname)
     if not path.exists():
         try:
@@ -214,10 +214,14 @@ stdout_handler = logging.StreamHandler(sys.stdout)
 stdout_handler.setLevel(logging.DEBUG if debug > 0 else logging.INFO)
 handlers = [stdout_handler]
 if config_folder:
-    file_handler = logging.FileHandler(config_folder / "Speekaboo.log")
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s:%(name)s:%(message)s'))
-    handlers.append(file_handler)
+    try:
+        file_handler = logging.FileHandler(config_folder / "Speekaboo.log")
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s:%(name)s:%(message)s'))
+        handlers.append(file_handler)
+    except IOError as e:
+        logging.warning("Error opening log file: %s", e)
+
 
 logging.basicConfig(level=logging.DEBUG, handlers=handlers)
 
