@@ -134,7 +134,7 @@ def get_voice_impl(voicepath: Path) -> tuple[PiperVoice, float]: # model, memory
     # estimate memory usage, since python doesn't manage the memory
     start_memory_usage = proc.memory_info().rss
 
-    voice = PiperVoice.load(voicepath, use_cuda=config.config["use_cuda"], num_threads=config.config["num_threads"])
+    voice = PiperVoice.load(voicepath, use_cuda=False, num_threads=config.config["num_threads"])
 
     end_memory_usage = proc.memory_info().rss
     diff_in_mb = (end_memory_usage - start_memory_usage) / (1024.0 * 1024.0)
