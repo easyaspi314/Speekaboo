@@ -12,7 +12,7 @@ requires-python = ">=3.10"
 dependencies = [
     'websockets>=14.2',
     'miniaudio>=1.61', 
-    'piper_phonemize_fix>=1.2.1',
+    'piper_phonemize_fix>=1.2.2',
     'onnxruntime>=1.19.0',
     'appdirs>=1.4.4',
     'filedialogs',
