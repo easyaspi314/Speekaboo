@@ -27,14 +27,27 @@ import math
 import signal
 from typing import Any, Literal
 
-import tkinter as tk
-from tkinter import TclError, ttk, messagebox, simpledialog
+try:
+    import tkinter as tk
+    from tkinter import TclError, ttk, messagebox, simpledialog
+except ImportError as e:
+    logging.error("Speekaboo requires Tkinter support.", exc_info=e)
+    sys.exit(1)
 
-import filedialogs
-import tktooltip
-import darkdetect
-import sv_ttk
 
+try:
+    import filedialogs
+    import tktooltip
+    import darkdetect
+    import sv_ttk
+except ImportError as e:
+    logging.error("Speekaboo appears to be missing dependencies.", exc_info=e)
+    try:
+        messagebox.showerror(title="Speekaboo", message="Speekaboo appears to be missing dependencies. Please make sure you installed them correctly.")
+    except TclError:
+        pass
+
+    sys.exit(1)
 
 import config
 import event
@@ -61,7 +74,13 @@ class ExceptionHandlingTk(tk.Tk, event.Observer):
         do_close()
 
     def __init__(self, *args, **kwargs):
-        tk.Tk.__init__(self, *args, **kwargs)
+        try:
+            tk.Tk.__init__(self, *args, **kwargs)
+        except TclError as e:
+            # First Tk call, will error if in a headless session.
+            logging.error("Unable to initialize Tkinter!", exc_info=e)
+            logging.error("Speekaboo is a GUI program, it doesn't support headless mode.")
+            sys.exit(1)
 
         event.Observer.__init__(self)
         self.observe("raise_error", self.raise_error)
